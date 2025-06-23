@@ -1,26 +1,24 @@
 import os
+from yolo_detection import detect_objects, draw_and_save_detections, save_yolo_txt, save_classes_txt
 
-# Define the path to the 'dataset' folder inside the current directory
 dataset_path = os.path.join(os.getcwd(), 'dataset')
 
-# Check if the dataset directory exists
 if not os.path.exists(dataset_path):
     print(f"The directory '{dataset_path}' does not exist.")
 else:
-    # List all files in the dataset folder
     files = [f for f in os.listdir(dataset_path) if os.path.isfile(os.path.join(dataset_path, f))]
+    print(f"Total number of files in 'dataset' folder: {len(files)}")
 
-    # Print all file names
-    print("Files in 'dataset' folder:")
-    for file in files:
-        print(file)
+    for file_name in files:
+        image_path = os.path.join(dataset_path, file_name)
+        detections = detect_objects(image_path)
+        if detections:
+            print(f"\nDetections in {file_name}:")
+            for det in detections:
+                print(det)
+            draw_and_save_detections(image_path, detections)
+            save_yolo_txt(image_path, detections)
+        else:
+            print(f"No detections above threshold in {file_name}")
 
-    # Optional: Read the content of each file
-    for file in files:
-        file_path = os.path.join(dataset_path, file)
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                print(f"\nContents of {file}:\n{content[:200]}...")  # Print first 200 characters
-        except Exception as e:
-            print(f"Could not read {file}: {e}")
+    save_classes_txt()

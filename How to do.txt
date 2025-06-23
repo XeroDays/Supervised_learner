@@ -1,7 +1,13 @@
+#Python version 3.13.2
+#Click Control+Shift+Python
+#Seelct Python: Select Interpreter
+#Then select the python version there 
+
 python -m venv venv
 venv\Scripts\activate
 
+pip install ultralytics
 
 python start.py
   
-  
+
