@@ -12,7 +12,14 @@ This project is a lightweight object detection utility using the [Ultralytics YO
 
 ## 📝 Description
 This project helps you generate training data for retraining a YOLO model. It automatically creates YOLO-format .txt annotation files for each image based on initial detections. You can then review and correct these annotations using tools like LabelImg, and prepare an improved dataset to train the model again for better accuracy.
+ 
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/e4b3e5e1-83ee-4add-b254-06997b42e6c4" alt="Image 1" width="300"/> 
+  <img src="https://github.com/user-attachments/assets/2cf26ad0-8ee2-4594-88ff-1803228d87da" alt="Image 1" width="300"/> 
+</p>
+
+![image](https://github.com/user-attachments/assets/d02cc218-b9b7-491f-a9df-1df0044e6e15)
 
 
 
