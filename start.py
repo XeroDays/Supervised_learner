@@ -2,6 +2,7 @@ import os
 from yolo_detection import detect_objects, draw_and_save_detections, save_yolo_txt, save_classes_txt
 
 dataset_path = os.path.join(os.getcwd(), 'dataset')
+image_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff')
 
 if not os.path.exists(dataset_path):
     print(f"The directory '{dataset_path}' does not exist.")
@@ -10,6 +11,10 @@ else:
     print(f"Total number of files in 'dataset' folder: {len(files)}")
 
     for file_name in files:
+        if not file_name.lower().endswith(image_extensions):
+            print(f"Skipping non-image file: {file_name}")
+            continue
+
         image_path = os.path.join(dataset_path, file_name)
         detections = detect_objects(image_path)
         if detections:

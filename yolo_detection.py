@@ -2,7 +2,7 @@ from ultralytics import YOLO
 import cv2
 import os
 
-model = YOLO("best.pt")
+model = YOLO("best2.pt")
 
 def detect_objects(image_path: str):
     results = model(image_path)
@@ -10,7 +10,7 @@ def detect_objects(image_path: str):
     for result in results:
         for box in result.boxes:
             confidence = float(box.conf[0])
-            if confidence > 0.4:
+            if confidence > 0.3:
                 detections.append({
                     "class_id": int(box.cls[0]),
                     "confidence": confidence,
@@ -52,7 +52,12 @@ def save_yolo_txt(image_path: str, detections: list):
 def save_classes_txt():
     class_dict = {
         0: "Car",
-        1: "Bike"
+        1: "Bike",
+        2: "Van",
+        3: "Bus",
+        4: "Ambulance",
+        5: "Airplane",
+        6: "Truck"
     }
     label_dir = os.path.join(os.getcwd(), "labels")
     os.makedirs(label_dir, exist_ok=True)
