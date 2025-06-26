@@ -25,13 +25,23 @@ class_colors = {
     6: (128, 0, 128)     # Purple
 }
 
+
+
+def delete_txt_files(file_list):
+    for file in file_list:
+        if file.endswith(".txt"):
+            os.remove(file)
+
+
+
+
 def detect_objects(image_path: str):
     results = model(image_path)
     detections = []
     for result in results:
         for box in result.boxes:
             confidence = float(box.conf[0])
-            if confidence > 0.3:
+            if confidence > 0.29:
                 detections.append({
                     "class_id": int(box.cls[0]),
                     "confidence": confidence,
