@@ -10,7 +10,7 @@ else:
     files = [f for f in os.listdir(dataset_path) if os.path.isfile(os.path.join(dataset_path, f))]
     print(f"Total number of files in 'dataset' folder: {len(files)}")
  
-    delete_txt_files(files)
+    # delete_txt_files(files)
 
     for file_name in files:
         if not file_name.lower().endswith(image_extensions):
