@@ -2,7 +2,7 @@ from ultralytics import YOLO
 import cv2
 import os
 
-model = YOLO("best3.pt")
+model = YOLO("best4.pt")
 
 class_dict = {
     0: "Car",
