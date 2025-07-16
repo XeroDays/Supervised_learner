@@ -13,7 +13,7 @@ else:
     print(f"Total number of text files: {len([f for f in files if not f.lower().endswith(image_extensions)])}")
  
     # delete_txt_files(files)
-
+    serial_number = 1
     for file_name in files:
         if not file_name.lower().endswith(image_extensions):
             continue
@@ -21,9 +21,10 @@ else:
         image_path = os.path.join(dataset_path, file_name)
         detections = detect_objects(image_path)
         if detections:
-            print(f"\nDetections in {file_name}: Count {len(detections)}") 
+            print(f"\n{serial_number}. Detections in {file_name}: Count {len(detections)}") 
             draw_and_save_detections(image_path, detections)
             save_yolo_txt(image_path, detections)
+            serial_number += 1
         else:
             print(f"No detections above threshold in {file_name}")
 
