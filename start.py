@@ -1,8 +1,12 @@
 import os
 from yolo_detection import detect_objects, draw_and_save_detections, save_yolo_txt, save_classes_txt, delete_txt_files
+from create_video import initVideo
 
 dataset_path = os.path.join(os.getcwd(), 'dataset')
 image_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff')
+
+
+
 
 if not os.path.exists(dataset_path):
     print(f"The directory '{dataset_path}' does not exist.")
@@ -29,3 +33,5 @@ else:
             print(f"No detections above threshold in {file_name}")
 
     save_classes_txt()
+
+initVideo()
