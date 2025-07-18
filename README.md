@@ -106,6 +106,11 @@ Example:
 ```
 Car
 Bike
+Van
+Bus
+Ambulance
+Airplane
+Truck
 ```
 
 ---
