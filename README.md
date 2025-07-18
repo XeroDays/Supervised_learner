@@ -27,6 +27,7 @@ This project helps you generate training data for retraining a YOLO model. It au
 
 <img width="465" height="206" alt="image" src="https://github.com/user-attachments/assets/2a30fd5d-93cb-44ef-80b1-59213b49166d" />
 
+<img width="534" height="319" alt="image" src="https://github.com/user-attachments/assets/65bab004-5293-4185-9768-c684885951e2" />
 
 
 ---
