@@ -25,6 +25,14 @@ This project helps you generate training data for retraining a YOLO model. It au
 
 ---
 
+## Precision & Accuracy
+
+<img width="465" height="206" alt="image" src="https://github.com/user-attachments/assets/2a30fd5d-93cb-44ef-80b1-59213b49166d" />
+
+
+
+---
+
 ## 🔧 Requirements
 
 * Python 3.13.2
