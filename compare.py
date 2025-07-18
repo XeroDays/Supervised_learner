@@ -5,7 +5,8 @@ import pandas as pd
 model_paths = {  
     "Model 4": "best4.pt",
     "Model 8": "best8.pt",
-    "Model 9": "best9.pt"
+    "Model 9": "best9.pt",
+    "Model 10": "best10.pt",
 }
 data_yaml = "data.yaml"
 
