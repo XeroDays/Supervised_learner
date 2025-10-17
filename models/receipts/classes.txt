@@ -1,5 +1,1 @@
 Transaction1
-Transaction2
-Receipt
-Invoice
-Payment

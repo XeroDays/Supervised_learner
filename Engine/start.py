@@ -1,9 +1,22 @@
 import os
+import shutil
 from .yolo_detection import detect_objects, draw_and_save_detections, save_yolo_txt, save_classes_txt, delete_txt_files, set_model_path
-from create_video import initVideo
+from .create_video import initVideo
+
+def clear_output_folder():
+    """Clear the output folder before starting detection"""
+    output_path = os.path.join(os.getcwd(), 'output')
+    if os.path.exists(output_path):
+        shutil.rmtree(output_path)
+        print("Cleared output folder")
+    else:
+        print("Output folder does not exist, will be created")
 
 def main(model_path):
     """Main function that accepts model path"""
+    # Clear output folder before starting
+    clear_output_folder()
+    
     # Set the model path in yolo_detection module
     set_model_path(model_path)
     

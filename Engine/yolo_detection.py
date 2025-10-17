@@ -4,7 +4,7 @@ import os
 
 # Global model variable
 model = None
-class_dict = {0: "Transaction1"}  # Default fallback
+class_dict = {}  # Empty by default
 
 def set_model_path(model_path):
     """Set the model path and load the model"""
@@ -23,16 +23,22 @@ def set_model_path(model_path):
                 class_name = line.strip()
                 if class_name:  # Skip empty lines
                     class_dict[idx] = class_name
+        
+        # Check if classes were loaded
+        if not class_dict:
+            raise RuntimeError(f"Error: No classes found in {classes_file}. The file is empty or contains only empty lines.")
+        
         print(f"Loaded {len(class_dict)} classes from {classes_file}")
         print(f"Classes: {list(class_dict.values())}")
     else:
-        print(f"Warning: classes.txt not found in {model_dir}, using default class")
-        class_dict = {0: "Transaction1"}
+        raise RuntimeError(f"Error: classes.txt not found in {model_dir}. Please ensure classes.txt exists in the model folder.")
 
 def check_model_loaded():
     """Check if model is loaded, raise error if not"""
     if model is None:
         raise RuntimeError("Error: No model selected. Please select a model first.")
+    if not class_dict:
+        raise RuntimeError("Error: No classes loaded. Please ensure classes.txt exists and contains valid class names.")
 
 
 # Optional: define distinct BGR colors for classes
@@ -43,7 +49,11 @@ class_colors = {
     3: (255, 255, 0),    # Cyan
     4: (255, 0, 255),    # Magenta
     5: (0, 255, 255),    # Yellow
-    6: (128, 0, 128)     # Purple
+    6: (128, 0, 128),     # Purple
+    7: (0, 128, 128),     # Teal
+    8: (128, 128, 0),     # Olive
+    9: (128, 128, 128),   # Gray
+    10: (255, 255, 255),  # White
 }
 
 
@@ -82,7 +92,7 @@ def draw_and_save_detections(image_path: str, detections: list):
         cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
         cv2.putText(img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-    output_dir = os.path.join(os.getcwd(), "saved")
+    output_dir = os.path.join(os.getcwd(), "output", "saved")
     os.makedirs(output_dir, exist_ok=True)
     file_name = os.path.basename(image_path)
     output_path = os.path.join(output_dir, file_name)
@@ -91,7 +101,7 @@ def draw_and_save_detections(image_path: str, detections: list):
 def save_yolo_txt(image_path: str, detections: list):
     img = cv2.imread(image_path)
     h, w = img.shape[:2]
-    label_dir = os.path.join(os.getcwd(), "labels")
+    label_dir = os.path.join(os.getcwd(), "output", "labels")
     os.makedirs(label_dir, exist_ok=True)
     file_name = os.path.splitext(os.path.basename(image_path))[0] + ".txt"
     output_path = os.path.join(label_dir, file_name)
@@ -106,7 +116,7 @@ def save_yolo_txt(image_path: str, detections: list):
             f.write(f"{det['class_id']} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}\n")
 
 def save_classes_txt():
-    label_dir = os.path.join(os.getcwd(), "labels")
+    label_dir = os.path.join(os.getcwd(), "output", "labels")
     os.makedirs(label_dir, exist_ok=True)
     classes_path = os.path.join(label_dir, "classes.txt")
     with open(classes_path, "w") as f:
