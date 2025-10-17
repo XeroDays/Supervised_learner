@@ -1,0 +1,45 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Engine cache files
+Engine/__pycache__/
+
+# YOLO runs folder
+runs/
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Output files
+output/
+*.mp4
+*.avi
+
+# Model files (optional - uncomment if you don't want to track models)
+# *.pt
+# models/
+
+# Dataset files (optional - uncomment if you don't want to track datasets)
+# dataset/
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
