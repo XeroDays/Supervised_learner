@@ -1,5 +1,6 @@
 train: comparer/images/train
 val: comparer/images/val
 
-nc: 7
-names: ['Car', 'Bike', 'Van', 'Bus', 'Ambulance', 'Airplane', 'Truck']
+nc: 1
+# names: ['Car', 'Bike', 'Van', 'Bus', 'Ambulance', 'Airplane', 'Truck']
+names: ['Transaction1']

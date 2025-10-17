@@ -2,16 +2,10 @@ from ultralytics import YOLO
 import cv2
 import os
 
-model = YOLO("best10.pt")
+model = YOLO("models/receipts/best1.pt")
 
 class_dict = {
-    0: "Car",
-    1: "Bike",
-    2: "Van",
-    3: "Bus",
-    4: "Ambulance",
-    5: "Airplane",
-    6: "Truck"
+    0: "Transaction1"
 }
 
 # Optional: define distinct BGR colors for classes
