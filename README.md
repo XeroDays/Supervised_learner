@@ -53,6 +53,22 @@ pip install ultralytics opencv-python pandas pyyaml
 
 ## 🚀 How to Use
 
+### 0. Setup Virtual Environment
+
+First, create and activate a virtual environment:
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On Windows:
+venv\Scripts\activate
+
+# On macOS/Linux:
+source venv/bin/activate
+```
+
 ### 1. Setup Your Models
 
 Organize your trained models in the following structure:
@@ -84,7 +100,10 @@ dataset/
 
 ### 3. Run the System
 
+Make sure your virtual environment is activated, then run:
+
 ```bash
+# Ensure virtual environment is activated (you should see (venv) in your terminal)
 python main.py
 ```
 
