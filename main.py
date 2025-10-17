@@ -1,6 +1,7 @@
 import os
 import sys
 from Engine.start import main as start_main
+from Engine.compare import compare_models
 
 def list_model_folders():
     """List all folders in the models directory"""
@@ -79,39 +80,79 @@ def select_model_file(folder_path):
             print("\nExiting...")
             sys.exit(0)
 
+def select_feature():
+    """Allow user to select which feature to use"""
+    print("\nAvailable features:")
+    print("-" * 20)
+    print("1. Process Images (Detection)")
+    print("2. Compare Models")
+    
+    while True:
+        try:
+            choice = input("\nSelect a feature (1-2): ").strip()
+            choice_num = int(choice)
+            if choice_num == 1:
+                return "detection"
+            elif choice_num == 2:
+                return "compare"
+            else:
+                print("Please enter 1 or 2")
+        except ValueError:
+            print("Please enter a valid number")
+        except KeyboardInterrupt:
+            print("\nExiting...")
+            sys.exit(0)
+
 def main():
     """Main entry point for the application"""
     print("=" * 50)
     print("YOLO Model Selection and Detection System")
     print("=" * 50)
     
-    # Step 1: Select model folder
+    # Step 1: Select feature
+    feature = select_feature()
+    
+    # Step 2: Select model folder
     selected_folder = select_model_folder()
     if not selected_folder:
         return
     
     folder_path = os.path.join("models", selected_folder)
     
-    # Step 2: Select model file
-    selected_model = select_model_file(folder_path)
-    if not selected_model:
-        return
+    if feature == "detection":
+        # Step 3: Select model file for detection
+        selected_model = select_model_file(folder_path)
+        if not selected_model:
+            return
+        
+        # Step 4: Create full model path
+        model_path = os.path.join(folder_path, selected_model)
+        print(f"\nSelected model path: {model_path}")
+        
+        # Step 5: Pass model path to start.py
+        print("\nStarting detection process...")
+        print("-" * 30)
+        
+        try:
+            start_main(model_path)
+        except Exception as e:
+            print(f"Error running detection: {e}")
+            return
+        
+        print("\nDetection process completed!")
     
-    # Step 3: Create full model path
-    model_path = os.path.join(folder_path, selected_model)
-    print(f"\nSelected model path: {model_path}")
-    
-    # Step 4: Pass model path to start.py
-    print("\nStarting detection process...")
-    print("-" * 30)
-    
-    try:
-        start_main(model_path)
-    except Exception as e:
-        print(f"Error running detection: {e}")
-        return
-    
-    print("\nDetection process completed!")
+    elif feature == "compare":
+        # Step 3: Compare all models in the folder
+        print(f"\nStarting model comparison for '{selected_folder}' folder...")
+        print("-" * 50)
+        
+        try:
+            compare_models(folder_path)
+        except Exception as e:
+            print(f"Error running model comparison: {e}")
+            return
+        
+        print("\nModel comparison completed!")
 
 if __name__ == "__main__":
     main()
