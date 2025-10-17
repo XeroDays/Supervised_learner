@@ -36,8 +36,64 @@ def create_data_yaml(folder_path):
     print(f"Created data.yaml with {len(classes)} classes: {classes}")
     return data_yaml_path
 
+def setup_comparer_dataset():
+    """Setup comparer dataset by moving files from dataset folder to comparer structure"""
+    dataset_path = os.path.join(os.getcwd(), 'dataset')
+    if not os.path.exists(dataset_path):
+        raise FileNotFoundError(f"Dataset folder not found: {dataset_path}")
+    
+    # Create comparer folder structure
+    comparer_path = os.path.join(os.path.dirname(__file__), "comparer")
+    images_val_path = os.path.join(comparer_path, "images", "val")
+    labels_val_path = os.path.join(comparer_path, "labels", "val")
+    
+    # Clear existing comparer folder if it exists
+    if os.path.exists(comparer_path):
+        import shutil
+        shutil.rmtree(comparer_path)
+        print("Cleared existing comparer folder")
+    
+    # Create directories
+    os.makedirs(images_val_path, exist_ok=True)
+    os.makedirs(labels_val_path, exist_ok=True)
+    
+    # Get all files from dataset folder
+    dataset_files = [f for f in os.listdir(dataset_path) if os.path.isfile(os.path.join(dataset_path, f))]
+    
+    # Separate image and text files
+    image_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff')
+    image_files = [f for f in dataset_files if f.lower().endswith(image_extensions)]
+    text_files = [f for f in dataset_files if f.lower().endswith('.txt')]
+    
+    print(f"Found {len(image_files)} image files and {len(text_files)} text files in dataset")
+    
+    # Copy image files to comparer/images/val
+    for image_file in image_files:
+        src_path = os.path.join(dataset_path, image_file)
+        dst_path = os.path.join(images_val_path, image_file)
+        if os.path.exists(src_path):
+            import shutil
+            shutil.copy2(src_path, dst_path)
+            print(f"Copied image: {image_file}")
+    
+    # Copy text files to comparer/labels/val
+    for text_file in text_files:
+        src_path = os.path.join(dataset_path, text_file)
+        dst_path = os.path.join(labels_val_path, text_file)
+        if os.path.exists(src_path):
+            import shutil
+            shutil.copy2(src_path, dst_path)
+            print(f"Copied label: {text_file}")
+    
+    print(f"Dataset setup complete. Files copied to: {comparer_path}")
+    return comparer_path
+
 def compare_models(folder_path):
     """Compare all models in the specified folder"""
+    # Setup comparer dataset first
+    print("Setting up comparer dataset...")
+    comparer_path = setup_comparer_dataset()
+    
     # Create data.yaml file
     data_yaml_path = create_data_yaml(folder_path)
     
