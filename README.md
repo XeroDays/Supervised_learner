@@ -1,17 +1,20 @@
-# YOLO Object Detection Pipeline
+ 
+## 🦾 YOLO Auto Pre-Labeling Tool
 
-This project is a lightweight object detection utility using the [Ultralytics YOLO](https://github.com/ultralytics/ultralytics) framework. It performs the following tasks:
+A powerful tool built on top of **Ultralytics YOLO** that automatically pre-labels images in your dataset to give you a head start on the annotation process. This software runs your dataset through a YOLO model, generates bounding boxes and YOLO-style annotation files (`.txt`), and prepares them for manual correction using tools like **LabelImg**.
 
-* Detects objects in images using a YOLO `.pt` model
-* Filters detections based on a confidence threshold
-* Draws bounding boxes on the images
-* Saves the output images in a `saved/` folder
-* Generates YOLO-format `.txt` label files for training
-* Outputs `classes.txt` containing the class names
+---
 
+### 🚀 Features
 
-## 📝 Description
-This project helps you generate training data for retraining a YOLO model. It automatically creates YOLO-format .txt annotation files for each image based on initial detections. You can then review and correct these annotations using tools like LabelImg, and prepare an improved dataset to train the model again for better accuracy.
+* 🔍 **Pre-label images using a YOLO model**
+* 📂 **Read entire datasets before manual labeling**
+* ✍️ **Generate YOLO `.txt` files for bounding boxes**
+* 🎯 **Confidence thresholding** to control what gets labeled
+* 📝 **Easily relabel manually for improved accuracy**
+* 🧠 Works great as a **head start for training a custom model**
+
+---
  
 
 <img width="1461" height="633" alt="image" src="https://github.com/user-attachments/assets/ad586630-89d2-4dcd-8af4-dd1f405d0d48" />
@@ -27,6 +30,7 @@ This project helps you generate training data for retraining a YOLO model. It au
 
 <img width="465" height="206" alt="image" src="https://github.com/user-attachments/assets/2a30fd5d-93cb-44ef-80b1-59213b49166d" />
 
+<img width="534" height="319" alt="image" src="https://github.com/user-attachments/assets/65bab004-5293-4185-9768-c684885951e2" />
 
 
 ---
