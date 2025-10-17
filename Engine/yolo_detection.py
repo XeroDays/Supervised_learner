@@ -2,11 +2,38 @@ from ultralytics import YOLO
 import cv2
 import os
 
-model = YOLO("models/receipts/best1.pt")
+# Global model variable
+model = None
+class_dict = {0: "Transaction1"}  # Default fallback
 
-class_dict = {
-    0: "Transaction1"
-}
+def set_model_path(model_path):
+    """Set the model path and load the model"""
+    global model, class_dict
+    model = YOLO(model_path)
+    print(f"Model loaded from: {model_path}")
+    
+    # Load classes from classes.txt in the model's folder
+    model_dir = os.path.dirname(model_path)
+    classes_file = os.path.join(model_dir, "classes.txt")
+    
+    if os.path.exists(classes_file):
+        class_dict = {}
+        with open(classes_file, 'r') as f:
+            for idx, line in enumerate(f):
+                class_name = line.strip()
+                if class_name:  # Skip empty lines
+                    class_dict[idx] = class_name
+        print(f"Loaded {len(class_dict)} classes from {classes_file}")
+        print(f"Classes: {list(class_dict.values())}")
+    else:
+        print(f"Warning: classes.txt not found in {model_dir}, using default class")
+        class_dict = {0: "Transaction1"}
+
+def check_model_loaded():
+    """Check if model is loaded, raise error if not"""
+    if model is None:
+        raise RuntimeError("Error: No model selected. Please select a model first.")
+
 
 # Optional: define distinct BGR colors for classes
 class_colors = {
@@ -30,6 +57,7 @@ def delete_txt_files(file_list):
 
 
 def detect_objects(image_path: str):
+    check_model_loaded()  # Check if model is loaded before proceeding
     results = model(image_path)
     detections = []
     for result in results:
