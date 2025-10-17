@@ -16,6 +16,26 @@ A comprehensive tool built on top of **Ultralytics YOLO** that provides both aut
 
 ---
 
+## 📸 Screenshots
+
+### Main Interface
+<img width="1461" height="633" alt="Main Interface" src="https://github.com/user-attachments/assets/ad586630-89d2-4dcd-8af4-dd1f405d0d48" />
+
+### Detection Results
+![Detection Results](https://github.com/user-attachments/assets/d02cc218-b9b7-491f-a9df-1df0044e6e15)
+
+---
+
+## 🎯 Precision & Accuracy
+
+### Detection Accuracy
+<img width="465" height="206" alt="Detection Accuracy" src="https://github.com/user-attachments/assets/2a30fd5d-93cb-44ef-80b1-59213b49166d" />
+
+### Model Performance
+<img width="534" height="319" alt="Model Performance" src="https://github.com/user-attachments/assets/65bab004-5293-4185-9768-c684885951e2" />
+
+---
+
 ## 🔧 Requirements
 
 * Python 3.13.2
