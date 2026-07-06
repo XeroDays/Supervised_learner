@@ -1,0 +1,9 @@
+# TFLite export (requires Python 3.11+)
+# Install separately: pip install -r requirements-tflite.txt
+tensorflow>=2.16.0
+tf-keras
+onnx2tf==1.26.3
+onnxslim>=0.1.56
+onnx-graphsurgeon>=0.3.26
+onnxsim
+sng4onnx

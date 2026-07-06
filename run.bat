@@ -22,6 +22,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
+if exist requirements-tflite.txt (
+    echo Installing TFLite export requirements...
+    python -m pip install -r requirements-tflite.txt
+)
+
 echo Starting main.py...
 python main.py
 

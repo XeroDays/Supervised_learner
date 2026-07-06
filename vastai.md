@@ -60,9 +60,19 @@ scp -P PORT -r dataset root@IP:/root/Supervised_learner/dataset
 
 ```bash
 cd Supervised_learner
+git pull
 chmod +x start-linux.sh
 ./start-linux.sh
 ```
+
+If you see `No module named 'Engine.compare'`, the server repo is out of date:
+
+```bash
+git pull origin main
+ls Engine/compare.py
+```
+
+If the file is missing, push your latest code from your laptop first, then pull again on the server.
 
 The script will:
 
@@ -77,12 +87,13 @@ scp -P PORT root@IP:/root/Supervised_learner/output/best.pt .
 scp -P PORT root@IP:/root/Supervised_learner/output/best.tflite .
 ```
 
-## Re-export TFLite (optional)
+## Re-export TFLite on Linux (optional, requires Python 3.11+)
 
 ```bash
 cd Supervised_learner
 source venv/bin/activate
-python temp/export_tflite.py
+pip install -r requirements-tflite.txt
+python -c "from ultralytics import YOLO; YOLO('output/best.pt').export(format='tflite', imgsz=640)"
 ```
 
 ---

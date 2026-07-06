@@ -16,6 +16,31 @@ fail() {
     exit 1
 }
 
+verify_project_files() {
+    local missing=()
+    for file in Engine/__init__.py Engine/start.py Engine/compare.py Engine/train.py main.py; do
+        if [ ! -f "$SCRIPT_DIR/$file" ]; then
+            missing+=("$file")
+        fi
+    done
+
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo -e "${RED}Missing project files:${NC}"
+        printf '  %s\n' "${missing[@]}"
+        fail "Update the repo with: git pull"
+    fi
+}
+
+install_pytorch_cuda() {
+    if ! command -v nvidia-smi &> /dev/null; then
+        return
+    fi
+
+    echo -e "${YELLOW}Installing PyTorch with CUDA 12.1 for GPU training...${NC}"
+    "$VENV_DIR/bin/pip" install torch torchvision --index-url https://download.pytorch.org/whl/cu121 -q \
+        || echo -e "${YELLOW}Warning: CUDA PyTorch install failed. Training may run on CPU.${NC}"
+}
+
 check_gpu() {
     echo -e "\n${GREEN}=== GPU Check ===${NC}"
 
@@ -38,14 +63,38 @@ PY
 setup_venv() {
     echo -e "\n${GREEN}=== Environment Setup ===${NC}"
 
+    PYTHON_CMD=""
+    for candidate in python3.13 python3.12 python3.11 python3; do
+        if command -v "$candidate" &> /dev/null; then
+            PYTHON_CMD="$candidate"
+            break
+        fi
+    done
+
+    [ -n "$PYTHON_CMD" ] || fail "python3 is not installed. Run: apt install -y python3-venv python3-pip"
+
+    PYTHON_VERSION=$("$PYTHON_CMD" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+    echo -e "${YELLOW}Using $PYTHON_CMD (Python $PYTHON_VERSION)${NC}"
+
     if [ ! -d "$VENV_DIR" ]; then
         echo -e "${YELLOW}Creating virtual environment...${NC}"
-        python3 -m venv "$VENV_DIR" || fail "Failed to create virtual environment"
+        "$PYTHON_CMD" -m venv "$VENV_DIR" || fail "Failed to create virtual environment"
     fi
 
     echo -e "${YELLOW}Installing dependencies...${NC}"
     "$VENV_DIR/bin/python" -m pip install --upgrade pip -q
     "$VENV_DIR/bin/pip" install -r "$SCRIPT_DIR/requirements.txt" -q || fail "Failed to install requirements"
+    install_pytorch_cuda
+
+    PYTHON_MINOR=$("$VENV_DIR/bin/python" -c 'import sys; print(sys.version_info.minor)')
+    if [ "$PYTHON_MINOR" -ge 11 ] && [ -f "$SCRIPT_DIR/requirements-tflite.txt" ]; then
+        echo -e "${YELLOW}Installing TFLite export dependencies...${NC}"
+        "$VENV_DIR/bin/pip" install -r "$SCRIPT_DIR/requirements-tflite.txt" -q \
+            || echo -e "${YELLOW}Warning: TFLite dependencies failed to install. Training will still work; export may be skipped.${NC}"
+    else
+        echo -e "${YELLOW}Python < 3.11 detected — skipping TFLite export dependencies.${NC}"
+        echo -e "${YELLOW}GPU training works; export TFLite locally on Windows or use Python 3.11+.${NC}"
+    fi
 
     echo -e "${GREEN}Environment ready.${NC}"
 }
@@ -63,6 +112,7 @@ echo -e "${CYAN}========================================${NC}"
 
 command -v python3 &> /dev/null || fail "python3 is not installed. Run: apt install -y python3-venv python3-pip"
 
+verify_project_files
 setup_venv
 check_gpu
 run_main

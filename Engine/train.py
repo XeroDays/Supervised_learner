@@ -156,12 +156,15 @@ def export_artifacts(best_weights_path, classes_file, output_dir):
     print(f"Exported: {best_pt_dest}")
 
     model = YOLO(best_weights_path)
-    export_path = model.export(format="tflite", imgsz=IMG_SIZE)
-
-    tflite_dest = os.path.join(output_dir, os.path.basename(export_path))
-    if os.path.abspath(export_path) != os.path.abspath(tflite_dest):
-        shutil.copy2(export_path, tflite_dest)
-    print(f"Exported: {tflite_dest}")
+    try:
+        export_path = model.export(format="tflite", imgsz=IMG_SIZE)
+        tflite_dest = os.path.join(output_dir, os.path.basename(export_path))
+        if os.path.abspath(export_path) != os.path.abspath(tflite_dest):
+            shutil.copy2(export_path, tflite_dest)
+        print(f"Exported: {tflite_dest}")
+    except Exception as e:
+        print(f"Warning: TFLite export skipped ({e})")
+        print("Install requirements-tflite.txt on Python 3.11+ to enable TFLite export.")
 
     classes_dest = os.path.join(output_dir, "classes.txt")
     shutil.copy2(classes_file, classes_dest)

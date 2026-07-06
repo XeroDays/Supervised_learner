@@ -1,8 +1,5 @@
 import os
 import sys
-from Engine.start import main as start_main
-from Engine.compare import compare_models
-from Engine.train import train_model
 
 def list_model_folders():
     """List all folders in the models directory"""
@@ -120,6 +117,7 @@ def main():
         print("\nStarting model training...")
         print("-" * 30)
         try:
+            from Engine.train import train_model
             train_model()
         except Exception as e:
             print(f"Error running training: {e}")
@@ -149,6 +147,7 @@ def main():
         print("-" * 30)
         
         try:
+            from Engine.start import main as start_main
             start_main(model_path)
         except Exception as e:
             print(f"Error running detection: {e}")
@@ -162,6 +161,7 @@ def main():
         print("-" * 50)
         
         try:
+            from Engine.compare import compare_models
             compare_models(folder_path)
         except Exception as e:
             print(f"Error running model comparison: {e}")

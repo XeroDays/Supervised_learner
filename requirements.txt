@@ -2,13 +2,3 @@ ultralytics
 opencv-python
 pandas
 PyYAML
-
-# TFLite export (Ultralytics model.export format='tflite')
-tensorflow==2.21.0
-keras==3.15.0
-tf-keras==2.21.0
-onnx2tf==1.26.3
-onnxslim>=0.1.56
-onnx-graphsurgeon>=0.3.26
-onnxsim
-sng4onnx
