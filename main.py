@@ -2,6 +2,7 @@ import os
 import sys
 from Engine.start import main as start_main
 from Engine.compare import compare_models
+from Engine.train import train_model
 
 def list_model_folders():
     """List all folders in the models directory"""
@@ -86,17 +87,20 @@ def select_feature():
     print("-" * 20)
     print("1. Process Images (Detection)")
     print("2. Compare Models")
+    print("3. Train Model")
     
     while True:
         try:
-            choice = input("\nSelect a feature (1-2): ").strip()
+            choice = input("\nSelect a feature (1-3): ").strip()
             choice_num = int(choice)
             if choice_num == 1:
                 return "detection"
             elif choice_num == 2:
                 return "compare"
+            elif choice_num == 3:
+                return "train"
             else:
-                print("Please enter 1 or 2")
+                print("Please enter 1, 2, or 3")
         except ValueError:
             print("Please enter a valid number")
         except KeyboardInterrupt:
@@ -111,7 +115,18 @@ def main():
     
     # Step 1: Select feature
     feature = select_feature()
-    
+
+    if feature == "train":
+        print("\nStarting model training...")
+        print("-" * 30)
+        try:
+            train_model()
+        except Exception as e:
+            print(f"Error running training: {e}")
+            return
+        print("\nTraining process completed!")
+        return
+
     # Step 2: Select model folder
     selected_folder = select_model_folder()
     if not selected_folder:
