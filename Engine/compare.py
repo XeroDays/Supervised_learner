@@ -1,7 +1,102 @@
 from ultralytics import YOLO
 import pandas as pd
 import os
+import shutil
 import yaml
+import math
+import cv2
+import numpy as np
+
+VAL_PLOT_FILES = [
+    "confusion_matrix_normalized.png",
+    "confusion_matrix.png",
+    "F1_curve.png",
+    "P_curve.png",
+    "PR_curve.png",
+    "R_curve.png",
+]
+
+LABEL_HEIGHT = 40
+MAX_CELL_WIDTH = 640
+
+
+def combine_val_plots_grid(model_run_dirs, plot_filename, output_path):
+    """Stitch the same YOLO val plot from each model into a labeled grid image."""
+    cells = []
+    for model_name, run_dir in model_run_dirs.items():
+        img_path = os.path.join(run_dir, plot_filename)
+        if not os.path.exists(img_path):
+            print(f"  Warning: missing {plot_filename} for {model_name}")
+            continue
+        img = cv2.imread(img_path)
+        if img is None:
+            print(f"  Warning: could not read {img_path}")
+            continue
+        cells.append((model_name, img))
+
+    if not cells:
+        print(f"  Warning: no images found for {plot_filename}, skipping grid.")
+        return False
+
+    max_w = min(max(img.shape[1] for _, img in cells), MAX_CELL_WIDTH)
+    max_h = max(img.shape[0] for _, img in cells)
+
+    labeled_cells = []
+    for model_name, img in cells:
+        h, w = img.shape[:2]
+        scale = min(max_w / w, max_h / h)
+        new_w = max(1, int(w * scale))
+        new_h = max(1, int(h * scale))
+        resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+        cell = np.full((max_h + LABEL_HEIGHT, max_w, 3), 255, dtype=np.uint8)
+        y_offset = LABEL_HEIGHT + (max_h - new_h) // 2
+        x_offset = (max_w - new_w) // 2
+        cell[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        text_size = cv2.getTextSize(model_name, font, 0.6, 2)[0]
+        text_x = max(0, (max_w - text_size[0]) // 2)
+        text_y = (LABEL_HEIGHT + text_size[1]) // 2
+        cv2.putText(cell, model_name, (text_x, text_y), font, 0.6, (0, 0, 0), 2)
+
+        labeled_cells.append(cell)
+
+    n = len(labeled_cells)
+    cols = math.ceil(math.sqrt(n))
+    rows = math.ceil(n / cols)
+    cell_h, cell_w = labeled_cells[0].shape[:2]
+
+    canvas = np.full((rows * cell_h, cols * cell_w, 3), 255, dtype=np.uint8)
+    for idx, cell in enumerate(labeled_cells):
+        row, col = divmod(idx, cols)
+        y1, y2 = row * cell_h, (row + 1) * cell_h
+        x1, x2 = col * cell_w, (col + 1) * cell_w
+        canvas[y1:y2, x1:x2] = cell
+
+    cv2.imwrite(output_path, canvas)
+    return True
+
+
+def clear_runs_folder():
+    """Remove the runs folder before comparison so val outputs start fresh."""
+    runs_path = os.path.join(os.getcwd(), "runs")
+    if os.path.exists(runs_path):
+        shutil.rmtree(runs_path)
+        print("Cleared runs folder")
+    else:
+        print("Runs folder does not exist, will be created by YOLO")
+
+
+def clear_output_folder():
+    """Remove the output folder before comparison so results start fresh."""
+    output_path = os.path.join(os.getcwd(), "output")
+    if os.path.exists(output_path):
+        shutil.rmtree(output_path)
+        print("Cleared output folder")
+    else:
+        print("Output folder does not exist, will be created")
+
 
 def create_data_yaml(folder_path):
     """Create data.yaml file based on the model folder and classes.txt"""
@@ -34,7 +129,7 @@ def create_data_yaml(folder_path):
         yaml.dump(data_yaml_content, f, default_flow_style=False)
     
     print(f"Created data.yaml with {len(classes)} classes: {classes}")
-    return data_yaml_path
+    return data_yaml_path, classes
 
 def setup_comparer_dataset():
     """Setup comparer dataset by moving files from dataset folder to comparer structure"""
@@ -49,7 +144,6 @@ def setup_comparer_dataset():
     
     # Clear existing comparer folder if it exists
     if os.path.exists(comparer_path):
-        import shutil
         shutil.rmtree(comparer_path)
         print("Cleared existing comparer folder")
     
@@ -72,7 +166,6 @@ def setup_comparer_dataset():
         src_path = os.path.join(dataset_path, image_file)
         dst_path = os.path.join(images_val_path, image_file)
         if os.path.exists(src_path):
-            import shutil
             shutil.copy2(src_path, dst_path)
             print(f"Copied image: {image_file}")
     
@@ -81,7 +174,6 @@ def setup_comparer_dataset():
         src_path = os.path.join(dataset_path, text_file)
         dst_path = os.path.join(labels_val_path, text_file)
         if os.path.exists(src_path):
-            import shutil
             shutil.copy2(src_path, dst_path)
             print(f"Copied label: {text_file}")
     
@@ -90,12 +182,17 @@ def setup_comparer_dataset():
 
 def compare_models(folder_path):
     """Compare all models in the specified folder"""
+    clear_runs_folder()
+    clear_output_folder()
+
     # Setup comparer dataset first
     print("Setting up comparer dataset...")
     comparer_path = setup_comparer_dataset()
     
     # Create data.yaml file
-    data_yaml_path = create_data_yaml(folder_path)
+    data_yaml_path, dataset_classes = create_data_yaml(folder_path)
+    data_nc = len(dataset_classes)
+    val_project = os.path.join(os.getcwd(), "runs", "detect")
     
     # Get all .pt files in the folder
     model_files = [f for f in os.listdir(folder_path) if f.endswith('.pt')]
@@ -123,21 +220,42 @@ def compare_models(folder_path):
     
     # Evaluate and collect results
     results_summary = {}
-    
+    model_run_dirs = {}
+
     for model_name, model_path in model_paths.items():
         try:
             print(f"\nEvaluating {model_name}...")
             model = YOLO(model_path)
-            results = model.val(data=data_yaml_path, split="val", verbose=False)
+            model_nc = model.model.nc
+            if model_nc != data_nc:
+                model_classes = list(model.names.values())
+                print(
+                    f"⚠️ Skipping {model_name}: model has {model_nc} classes "
+                    f"{model_classes}, but dataset has {data_nc} classes "
+                    f"{dataset_classes}"
+                )
+                results_summary[model_name] = {v: None for v in metrics_to_extract.values()}
+                continue
+
+            run_name = os.path.splitext(os.path.basename(model_path))[0]
+            val_save_dir = os.path.join(val_project, run_name)
+            results = model.val(
+                data=data_yaml_path,
+                split="val",
+                verbose=False,
+                project=val_project,
+                name=run_name,
+            )
             metrics = results.results_dict
-    
+
             # Extract only the metrics we care about, fallback to None if missing
             filtered_metrics = {
                 metrics_to_extract[k]: metrics.get(k, None) for k in metrics_to_extract
             }
-    
+
             results_summary[model_name] = filtered_metrics
-    
+            model_run_dirs[model_name] = val_save_dir
+
         except Exception as e:
             print(f"❌ Error evaluating {model_name}: {e}")
             results_summary[model_name] = {v: None for v in metrics_to_extract.values()}
@@ -155,6 +273,16 @@ def compare_models(folder_path):
     results_file = os.path.join(output_dir, "model_comparison.csv")
     df.to_csv(results_file)
     print(f"\n📊 Comparison results saved to: {results_file}")
+
+    if model_run_dirs:
+        print("\n📈 Generating comparison grid images...")
+        for plot_file in VAL_PLOT_FILES:
+            out_name = plot_file.replace(".png", "_comparison.png")
+            out_path = os.path.join(output_dir, out_name)
+            if combine_val_plots_grid(model_run_dirs, plot_file, out_path):
+                print(f"  Comparison grid saved: {out_path}")
+    else:
+        print("\n⚠️ No successful model runs — skipping comparison grid images.")
 
 # For backward compatibility, keep the original execution if run directly
 if __name__ == "__main__":
