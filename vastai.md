@@ -56,6 +56,43 @@ Upload from local machine (run on your laptop):
 scp -P PORT -r dataset root@IP:/root/Supervised_learner/dataset
 ```
 
+### Upload & Extract Zip Dataset
+
+If your data is in a zip file named `Yolo_Vehicles_1280_clean.zip`, upload it into the `dataset/` folder and extract it on the server.
+
+**1. Upload the zip (run on your laptop):**
+
+```powershell
+scp -P PORT "C:\path\to\Yolo_Vehicles_1280_clean.zip" root@IP:/root/Supervised_learner/dataset/
+```
+
+**2. Extract on the server:**
+
+```bash
+cd /root/Supervised_learner/dataset
+apt install -y unzip
+unzip Yolo_Vehicles_1280_clean.zip
+```
+
+**3. Move all images and labels into `dataset/` (if they are inside subfolders):**
+
+```bash
+cd /root/Supervised_learner/dataset
+find . -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.txt" \) ! -name "classes.txt" -exec mv -n {} . \;
+```
+
+Your `dataset/` folder should look like this before training:
+
+```
+dataset/
+├── classes.txt
+├── image1.jpg
+├── image1.txt
+├── image2.jpg
+├── image2.txt
+└── ...
+```
+
 ## Run Application
 
 ```bash

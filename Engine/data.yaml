@@ -1,6 +1,11 @@
 names:
-- PriceTagSmall
-- PriceTagBig
-nc: 2
+- Car
+- Bike
+- Van
+- Bus
+- Ambulance
+- Airplane
+- Truck
+nc: 7
 train: comparer/images/train
 val: comparer/images/val

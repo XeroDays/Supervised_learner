@@ -1,2 +1,7 @@
-PriceTagSmall
-PriceTagBig
+Car
+Bike
+Van
+Bus
+Ambulance
+Airplane
+Truck
