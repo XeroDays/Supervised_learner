@@ -1,6 +1,7 @@
 import os
 import random
 import shutil
+import zipfile
 
 import torch
 import yaml
@@ -169,6 +170,23 @@ def export_artifacts(best_weights_path, classes_file, output_dir):
     return best_pt_dest, tflite_dest, classes_dest
 
 
+def zip_output_folder(output_dir, zip_name="output.zip"):
+    zip_path = os.path.join(output_dir, zip_name)
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for root, _, files in os.walk(output_dir):
+            for file_name in files:
+                if file_name == zip_name:
+                    continue
+                file_path = os.path.join(root, file_name)
+                archive.write(file_path, os.path.relpath(file_path, output_dir))
+
+    print(f"Created zip: {zip_path}")
+    return zip_path
+
+
 def train_model():
     dataset_path = os.path.join(_project_root(), "dataset")
     if not os.path.exists(dataset_path):
@@ -202,6 +220,7 @@ def train_model():
 
     print("\nExporting model artifacts...")
     export_artifacts(best_weights_path, classes_file, output_dir)
+    zip_output_folder(output_dir)
     print("\nTraining completed!")
 
 
