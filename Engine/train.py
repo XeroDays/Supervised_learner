@@ -201,10 +201,13 @@ def train_model():
     data_yaml_path = write_data_yaml(classes)
     output_dir = clear_output_folder()
 
+    print(f"PyTorch: {torch.__version__}")
     if torch.cuda.is_available():
-        print("GPU is available")
+        device = 0
+        print(f"Training on GPU: {torch.cuda.get_device_name(0)}")
     else:
-        print("GPU is not available — training will run on CPU")
+        device = "cpu"
+        print("WARNING: Training on CPU — install PyTorch cu128 for RTX 5060 Ti")
 
     print(f"\nStarting training ({epochs} epochs, imgsz={IMG_SIZE})...")
     model = YOLO(BASE_MODEL)
@@ -212,6 +215,8 @@ def train_model():
         data=data_yaml_path,
         epochs=epochs,
         imgsz=IMG_SIZE,
+        device=device,
+        workers=8 if device != "cpu" else 0,
         project=output_dir,
         name="training",
         exist_ok=True,

@@ -109,8 +109,44 @@ If the file is missing, push your latest code from your laptop first, then pull 
 The script will:
 
 - Create a virtual environment and install `requirements.txt`
+- Install PyTorch with CUDA 12.8 (`cu128`) for GPU training
 - Check GPU availability
 - Launch `main.py` (detection, model comparison, and training via the interactive menu)
+
+## GPU Troubleshooting (RTX 50-series / CUDA 12.8)
+
+If training is slow or shows `pin_memory ... no accelerator is found`, PyTorch is running on CPU.
+
+RTX 5060 Ti (Blackwell) requires PyTorch built with **CUDA 12.8**. Do **not** use `cu121` or `cu124`.
+
+**Verify CUDA in the venv:**
+
+```bash
+source venv/bin/activate
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+```
+
+Expected output:
+- Version contains `+cu128` (e.g. `2.7.1+cu128`)
+- `True`
+- `NVIDIA GeForce RTX 5060 Ti`
+
+**Manual fix:**
+
+```bash
+source venv/bin/activate
+pip install --force-reinstall torch torchvision \
+  --index-url https://download.pytorch.org/whl/cu128
+```
+
+**Full reset if still broken:**
+
+```bash
+rm -rf venv
+./start-linux.sh
+```
+
+During training you should see a `GPU_mem` value (not `0G`) and no `pin_memory` warning.
 
 ## Download Trained Model
 
