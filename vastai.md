@@ -24,7 +24,7 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK8gCu9dkrbujaUn/17Z0A6tsIn+5I7CO4a1Re5k7r3b
 ## Clone Repository & Install Dependencies
 
 ```bash
-git clone https://github.com/XeroDays/Supervised_learner.git
+git clone --depth 1 https://github.com/XeroDays/Supervised_learner.git
 apt update
 apt install -y python3-venv python3-pip
 cd Supervised_learner
@@ -60,12 +60,7 @@ scp -P PORT -r dataset root@IP:/root/Supervised_learner/dataset
 
 If your data is in a zip file named `Yolo_Vehicles_1280_clean.zip`, upload it into the `dataset/` folder and extract it on the server.
 
-**1. Upload the zip (run on your laptop):**
-
-```powershell
-scp -P PORT "C:\path\to\Yolo_Vehicles_1280_clean.zip" root@IP:/root/Supervised_learner/dataset/
-```
-
+  
 **2. Extract on the server:**
 
 ```bash
