@@ -1,11 +1,13 @@
 from ultralytics import YOLO
 import pandas as pd
 import os
+import re
 import shutil
 import yaml
 import math
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 
 VAL_PLOT_FILES = [
     "confusion_matrix_normalized.png",
@@ -16,8 +18,49 @@ VAL_PLOT_FILES = [
     "R_curve.png",
 ]
 
-LABEL_HEIGHT = 40
-MAX_CELL_WIDTH = 640
+TARGET_CELL_WIDTH = 520
+CELL_PADDING = 6
+LABEL_HEIGHT = 28
+
+METRIC_COLUMNS = ["Precision", "Recall", "mAP50", "mAP50-95"]
+METRIC_COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+
+
+def _model_sort_key(name):
+    match = re.search(r"\d+", name)
+    return int(match.group()) if match else name
+
+
+def _crop_whitespace(img, threshold=250):
+    """Crop borders around non-white plot content."""
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    mask = gray < threshold
+    if not mask.any():
+        return img
+    coords = np.column_stack(np.where(mask))
+    y0, x0 = coords.min(axis=0)
+    y1, x1 = coords.max(axis=0)
+    return img[y0:y1 + 1, x0:x1 + 1]
+
+
+def _make_labeled_cell(model_name, img):
+    """Crop, scale, and add a compact title bar — no extra vertical padding."""
+    cropped = _crop_whitespace(img)
+    h, w = cropped.shape[:2]
+    scale = TARGET_CELL_WIDTH / w if w > TARGET_CELL_WIDTH else 1.0
+    new_w = max(1, int(w * scale))
+    new_h = max(1, int(h * scale))
+    resized = cv2.resize(cropped, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    cell = np.full((new_h + LABEL_HEIGHT, new_w, 3), 255, dtype=np.uint8)
+    cell[LABEL_HEIGHT:, :] = resized
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    text_size = cv2.getTextSize(model_name, font, 0.55, 2)[0]
+    text_x = max(0, (new_w - text_size[0]) // 2)
+    text_y = (LABEL_HEIGHT + text_size[1]) // 2
+    cv2.putText(cell, model_name, (text_x, text_y), font, 0.55, (0, 0, 0), 2)
+    return cell
 
 
 def combine_val_plots_grid(model_run_dirs, plot_filename, output_path):
@@ -32,49 +75,90 @@ def combine_val_plots_grid(model_run_dirs, plot_filename, output_path):
         if img is None:
             print(f"  Warning: could not read {img_path}")
             continue
-        cells.append((model_name, img))
+        cells.append(_make_labeled_cell(model_name, img))
 
     if not cells:
         print(f"  Warning: no images found for {plot_filename}, skipping grid.")
         return False
 
-    max_w = min(max(img.shape[1] for _, img in cells), MAX_CELL_WIDTH)
-    max_h = max(img.shape[0] for _, img in cells)
-
-    labeled_cells = []
-    for model_name, img in cells:
-        h, w = img.shape[:2]
-        scale = min(max_w / w, max_h / h)
-        new_w = max(1, int(w * scale))
-        new_h = max(1, int(h * scale))
-        resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-        cell = np.full((max_h + LABEL_HEIGHT, max_w, 3), 255, dtype=np.uint8)
-        y_offset = LABEL_HEIGHT + (max_h - new_h) // 2
-        x_offset = (max_w - new_w) // 2
-        cell[y_offset:y_offset + new_h, x_offset:x_offset + new_w] = resized
-
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        text_size = cv2.getTextSize(model_name, font, 0.6, 2)[0]
-        text_x = max(0, (max_w - text_size[0]) // 2)
-        text_y = (LABEL_HEIGHT + text_size[1]) // 2
-        cv2.putText(cell, model_name, (text_x, text_y), font, 0.6, (0, 0, 0), 2)
-
-        labeled_cells.append(cell)
-
-    n = len(labeled_cells)
-    cols = math.ceil(math.sqrt(n))
+    n = len(cells)
+    cols = min(n, 3) if n > 2 else n
     rows = math.ceil(n / cols)
-    cell_h, cell_w = labeled_cells[0].shape[:2]
 
-    canvas = np.full((rows * cell_h, cols * cell_w, 3), 255, dtype=np.uint8)
-    for idx, cell in enumerate(labeled_cells):
+    row_heights = []
+    col_widths = [0] * cols
+    for idx, cell in enumerate(cells):
         row, col = divmod(idx, cols)
-        y1, y2 = row * cell_h, (row + 1) * cell_h
-        x1, x2 = col * cell_w, (col + 1) * cell_w
-        canvas[y1:y2, x1:x2] = cell
+        cell_h, cell_w = cell.shape[:2]
+        if row >= len(row_heights):
+            row_heights.append(cell_h)
+        else:
+            row_heights[row] = max(row_heights[row], cell_h)
+        col_widths[col] = max(col_widths[col], cell_w)
+
+    canvas_h = sum(row_heights) + CELL_PADDING * max(0, rows - 1)
+    canvas_w = sum(col_widths) + CELL_PADDING * max(0, cols - 1)
+    canvas = np.full((canvas_h, canvas_w, 3), 255, dtype=np.uint8)
+
+    row_y = 0
+    for row in range(rows):
+        col_x = 0
+        row_h = row_heights[row]
+        for col in range(cols):
+            idx = row * cols + col
+            if idx >= n:
+                break
+            cell = cells[idx]
+            cell_h, cell_w = cell.shape[:2]
+            y_offset = (row_h - cell_h) // 2
+            canvas[row_y + y_offset:row_y + y_offset + cell_h, col_x:col_x + cell_w] = cell
+            col_x += col_widths[col] + CELL_PADDING
+        row_y += row_h + CELL_PADDING
 
     cv2.imwrite(output_path, canvas)
+    return True
+
+
+def generate_metrics_line_chart(df, output_path):
+    """Line chart: models on X-axis, four metric series with labeled points."""
+    plot_df = df.dropna(how="all")
+    if plot_df.empty:
+        print("  Warning: no valid metrics for line chart, skipping.")
+        return False
+
+    plot_df = plot_df.sort_index(key=lambda names: [_model_sort_key(n) for n in names])
+    models = plot_df.index.tolist()
+    x = np.arange(len(models))
+
+    fig, ax = plt.subplots(figsize=(max(8, len(models) * 1.5), 6))
+    for metric, color in zip(METRIC_COLUMNS, METRIC_COLORS):
+        if metric not in plot_df.columns:
+            continue
+        values = plot_df[metric].astype(float).values
+        ax.plot(x, values, marker="o", linewidth=2, label=metric, color=color)
+        for xi, yi in zip(x, values):
+            if np.isfinite(yi):
+                ax.annotate(
+                    f"{yi:.2f}",
+                    (xi, yi),
+                    textcoords="offset points",
+                    xytext=(0, 8),
+                    ha="center",
+                    fontsize=8,
+                    color=color,
+                )
+
+    ax.set_title("Model Metrics Comparison")
+    ax.set_xlabel("Model")
+    ax.set_ylabel("Score")
+    ax.set_xticks(x)
+    ax.set_xticklabels(models, rotation=30, ha="right")
+    ax.set_ylim(0, 1.05)
+    ax.grid(True, linestyle="--", alpha=0.4)
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
     return True
 
 
@@ -273,6 +357,10 @@ def compare_models(folder_path):
     results_file = os.path.join(output_dir, "model_comparison.csv")
     df.to_csv(results_file)
     print(f"\n📊 Comparison results saved to: {results_file}")
+
+    metrics_chart = os.path.join(output_dir, "model_metrics_comparison.png")
+    if generate_metrics_line_chart(df, metrics_chart):
+        print(f"📈 Metrics line chart saved to: {metrics_chart}")
 
     if model_run_dirs:
         print("\n📈 Generating comparison grid images...")

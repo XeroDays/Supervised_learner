@@ -1,11 +1,5 @@
 names:
-- Car
-- Bike
-- Van
-- Bus
-- Ambulance
-- Airplane
-- Truck
-nc: 7
+- Transaction1
+nc: 1
 train: comparer/images/train
 val: comparer/images/val
