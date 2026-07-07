@@ -182,6 +182,14 @@ def clear_output_folder():
         print("Output folder does not exist, will be created")
 
 
+def clear_comparer_folder():
+    """Remove the temporary comparer dataset folder after comparison."""
+    comparer_path = os.path.join(os.path.dirname(__file__), "comparer")
+    if os.path.exists(comparer_path):
+        shutil.rmtree(comparer_path)
+        print("Cleared comparer folder")
+
+
 def create_data_yaml(folder_path):
     """Create data.yaml file based on the model folder and classes.txt"""
     # Read classes from classes.txt
@@ -272,105 +280,108 @@ def compare_models(folder_path):
     # Setup comparer dataset first
     print("Setting up comparer dataset...")
     comparer_path = setup_comparer_dataset()
-    
-    # Create data.yaml file
-    data_yaml_path, dataset_classes = create_data_yaml(folder_path)
-    data_nc = len(dataset_classes)
-    val_project = os.path.join(os.getcwd(), "runs", "detect")
-    
-    # Get all .pt files in the folder
-    model_files = [f for f in os.listdir(folder_path) if f.endswith('.pt')]
-    if not model_files:
-        print(f"No .pt model files found in {folder_path}")
-        return
-    
-    # Create model paths dictionary
-    model_paths = {}
-    for model_file in sorted(model_files):
-        model_name = f"Model {model_file.replace('.pt', '').replace('best', '')}"
-        model_paths[model_name] = os.path.join(folder_path, model_file)
-    
-    print(f"Found {len(model_paths)} models to compare:")
-    for name, path in model_paths.items():
-        print(f"  - {name}: {os.path.basename(path)}")
-    
-    # Evaluation metrics we care about
-    metrics_to_extract = {
-        "metrics/precision(B)": "Precision",
-        "metrics/recall(B)": "Recall",
-        "metrics/mAP50(B)": "mAP50",
-        "metrics/mAP50-95(B)": "mAP50-95"
-    }
-    
-    # Evaluate and collect results
-    results_summary = {}
-    model_run_dirs = {}
 
-    for model_name, model_path in model_paths.items():
-        try:
-            print(f"\nEvaluating {model_name}...")
-            model = YOLO(model_path)
-            model_nc = model.model.nc
-            if model_nc != data_nc:
-                model_classes = list(model.names.values())
-                print(
-                    f"⚠️ Skipping {model_name}: model has {model_nc} classes "
-                    f"{model_classes}, but dataset has {data_nc} classes "
-                    f"{dataset_classes}"
+    try:
+        # Create data.yaml file
+        data_yaml_path, dataset_classes = create_data_yaml(folder_path)
+        data_nc = len(dataset_classes)
+        val_project = os.path.join(os.getcwd(), "runs", "detect")
+
+        # Get all .pt files in the folder
+        model_files = [f for f in os.listdir(folder_path) if f.endswith('.pt')]
+        if not model_files:
+            print(f"No .pt model files found in {folder_path}")
+            return
+
+        # Create model paths dictionary
+        model_paths = {}
+        for model_file in sorted(model_files):
+            model_name = f"Model {model_file.replace('.pt', '').replace('best', '')}"
+            model_paths[model_name] = os.path.join(folder_path, model_file)
+
+        print(f"Found {len(model_paths)} models to compare:")
+        for name, path in model_paths.items():
+            print(f"  - {name}: {os.path.basename(path)}")
+
+        # Evaluation metrics we care about
+        metrics_to_extract = {
+            "metrics/precision(B)": "Precision",
+            "metrics/recall(B)": "Recall",
+            "metrics/mAP50(B)": "mAP50",
+            "metrics/mAP50-95(B)": "mAP50-95"
+        }
+
+        # Evaluate and collect results
+        results_summary = {}
+        model_run_dirs = {}
+
+        for model_name, model_path in model_paths.items():
+            try:
+                print(f"\nEvaluating {model_name}...")
+                model = YOLO(model_path)
+                model_nc = model.model.nc
+                if model_nc != data_nc:
+                    model_classes = list(model.names.values())
+                    print(
+                        f"⚠️ Skipping {model_name}: model has {model_nc} classes "
+                        f"{model_classes}, but dataset has {data_nc} classes "
+                        f"{dataset_classes}"
+                    )
+                    results_summary[model_name] = {v: None for v in metrics_to_extract.values()}
+                    continue
+
+                run_name = os.path.splitext(os.path.basename(model_path))[0]
+                val_save_dir = os.path.join(val_project, run_name)
+                results = model.val(
+                    data=data_yaml_path,
+                    split="val",
+                    verbose=False,
+                    project=val_project,
+                    name=run_name,
                 )
+                metrics = results.results_dict
+
+                # Extract only the metrics we care about, fallback to None if missing
+                filtered_metrics = {
+                    metrics_to_extract[k]: metrics.get(k, None) for k in metrics_to_extract
+                }
+
+                results_summary[model_name] = filtered_metrics
+                model_run_dirs[model_name] = val_save_dir
+
+            except Exception as e:
+                print(f"❌ Error evaluating {model_name}: {e}")
                 results_summary[model_name] = {v: None for v in metrics_to_extract.values()}
-                continue
 
-            run_name = os.path.splitext(os.path.basename(model_path))[0]
-            val_save_dir = os.path.join(val_project, run_name)
-            results = model.val(
-                data=data_yaml_path,
-                split="val",
-                verbose=False,
-                project=val_project,
-                name=run_name,
-            )
-            metrics = results.results_dict
+        # Create a comparison DataFrame
+        df = pd.DataFrame(results_summary).T
+        print("\n🔍 Model Comparison:")
+        print(df.round(4))
 
-            # Extract only the metrics we care about, fallback to None if missing
-            filtered_metrics = {
-                metrics_to_extract[k]: metrics.get(k, None) for k in metrics_to_extract
-            }
+        # Save results to output folder
+        output_dir = os.path.join(os.getcwd(), "output")
+        os.makedirs(output_dir, exist_ok=True)
 
-            results_summary[model_name] = filtered_metrics
-            model_run_dirs[model_name] = val_save_dir
+        # Save comparison results
+        results_file = os.path.join(output_dir, "model_comparison.csv")
+        df.to_csv(results_file)
+        print(f"\n📊 Comparison results saved to: {results_file}")
 
-        except Exception as e:
-            print(f"❌ Error evaluating {model_name}: {e}")
-            results_summary[model_name] = {v: None for v in metrics_to_extract.values()}
-    
-    # Create a comparison DataFrame
-    df = pd.DataFrame(results_summary).T
-    print("\n🔍 Model Comparison:")
-    print(df.round(4))
-    
-    # Save results to output folder
-    output_dir = os.path.join(os.getcwd(), "output")
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Save comparison results
-    results_file = os.path.join(output_dir, "model_comparison.csv")
-    df.to_csv(results_file)
-    print(f"\n📊 Comparison results saved to: {results_file}")
+        metrics_chart = os.path.join(output_dir, "model_metrics_comparison.png")
+        if generate_metrics_line_chart(df, metrics_chart):
+            print(f"📈 Metrics line chart saved to: {metrics_chart}")
 
-    metrics_chart = os.path.join(output_dir, "model_metrics_comparison.png")
-    if generate_metrics_line_chart(df, metrics_chart):
-        print(f"📈 Metrics line chart saved to: {metrics_chart}")
-
-    if model_run_dirs:
-        print("\n📈 Generating comparison grid images...")
-        for plot_file in VAL_PLOT_FILES:
-            out_name = plot_file.replace(".png", "_comparison.png")
-            out_path = os.path.join(output_dir, out_name)
-            if combine_val_plots_grid(model_run_dirs, plot_file, out_path):
-                print(f"  Comparison grid saved: {out_path}")
-    else:
-        print("\n⚠️ No successful model runs — skipping comparison grid images.")
+        if model_run_dirs:
+            print("\n📈 Generating comparison grid images...")
+            for plot_file in VAL_PLOT_FILES:
+                out_name = plot_file.replace(".png", "_comparison.png")
+                out_path = os.path.join(output_dir, out_name)
+                if combine_val_plots_grid(model_run_dirs, plot_file, out_path):
+                    print(f"  Comparison grid saved: {out_path}")
+        else:
+            print("\n⚠️ No successful model runs — skipping comparison grid images.")
+    finally:
+        clear_comparer_folder()
 
 # For backward compatibility, keep the original execution if run directly
 if __name__ == "__main__":
