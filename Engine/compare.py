@@ -296,7 +296,7 @@ def compare_models(folder_path):
         # Create model paths dictionary
         model_paths = {}
         for model_file in sorted(model_files):
-            model_name = f"Model {model_file.replace('.pt', '').replace('best', '')}"
+            model_name = os.path.splitext(model_file)[0]
             model_paths[model_name] = os.path.join(folder_path, model_file)
 
         print(f"Found {len(model_paths)} models to compare:")

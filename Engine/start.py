@@ -54,5 +54,5 @@ def main(model_path):
 # For backward compatibility, keep the original execution if run directly
 if __name__ == "__main__":
     # Use default model path if run directly
-    default_model_path = "models/receipts/best1.pt"
+    default_model_path = "models/Receipts/1-yolo8n.pt"
     main(default_model_path)
