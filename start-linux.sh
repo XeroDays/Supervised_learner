@@ -31,35 +31,6 @@ verify_project_files() {
     fi
 }
 
-install_pytorch_cuda() {
-    if ! command -v nvidia-smi &> /dev/null; then
-        return
-    fi
-
-    echo -e "${YELLOW}Installing PyTorch with CUDA 12.8 (required for RTX 50-series)...${NC}"
-    "$VENV_DIR/bin/pip" install --force-reinstall torch torchvision \
-        --index-url https://download.pytorch.org/whl/cu128 -q \
-        || fail "CUDA PyTorch install failed"
-}
-
-verify_pytorch_cuda() {
-    if ! command -v nvidia-smi &> /dev/null; then
-        return
-    fi
-
-    if ! "$VENV_DIR/bin/python" - <<'PY'
-import torch
-assert torch.cuda.is_available(), "CUDA not available — wrong PyTorch build"
-print(f"CUDA OK: {torch.cuda.get_device_name(0)}")
-print(f"PyTorch: {torch.__version__}")
-PY
-    then
-        echo -e "${RED}GPU detected but PyTorch CUDA is not working.${NC}"
-        echo -e "${YELLOW}Recreate the environment: rm -rf venv && ./start-linux.sh${NC}"
-        fail "PyTorch CUDA verification failed"
-    fi
-}
-
 check_gpu() {
     echo -e "\n${GREEN}=== GPU Check ===${NC}"
 
@@ -114,9 +85,6 @@ setup_venv() {
         echo -e "${YELLOW}Python < 3.11 detected — skipping TFLite export dependencies.${NC}"
         echo -e "${YELLOW}GPU training works; export TFLite locally on Windows or use Python 3.11+.${NC}"
     fi
-
-    install_pytorch_cuda
-    verify_pytorch_cuda
 
     echo -e "${GREEN}Environment ready.${NC}"
 }

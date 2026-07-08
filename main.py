@@ -1,4 +1,6 @@
 import os
+import shutil
+import subprocess
 import sys
 
 def list_model_folders():
@@ -78,26 +80,71 @@ def select_model_file(folder_path):
             print("\nExiting...")
             sys.exit(0)
 
+def install_pytorch_cuda():
+    """Install PyTorch with CUDA 12.8 (cu128) for RTX 50-series GPUs."""
+    print("\nInstalling PyTorch with CUDA 12.8 (required for RTX 50-series)...")
+    print("-" * 50)
+
+    if shutil.which("nvidia-smi") is None:
+        print("Warning: nvidia-smi not found. GPU may not be available on this system.")
+
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--force-reinstall",
+                "torch",
+                "torchvision",
+                "--index-url",
+                "https://download.pytorch.org/whl/cu128",
+            ],
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Error: CUDA PyTorch install failed (exit code {e.returncode})")
+        return
+
+    print("\nVerifying CUDA installation...")
+    try:
+        import torch
+
+        print(f"PyTorch: {torch.__version__}")
+        if torch.cuda.is_available():
+            print(f"CUDA available: {torch.cuda.get_device_name(0)}")
+        else:
+            print("CUDA not available — PyTorch installed, but no GPU detected or driver mismatch.")
+    except Exception as e:
+        print(f"Warning: Could not verify CUDA after install ({e})")
+
+    print("\nCUDA PyTorch installation completed.")
+
+
 def select_feature():
     """Allow user to select which feature to use"""
     print("\nAvailable features:")
     print("-" * 20)
+    print("0. Install PyTorch with CUDA 12.8")
     print("1. Process Images (Detection)")
     print("2. Compare Models")
     print("3. Train Model")
     
     while True:
         try:
-            choice = input("\nSelect a feature (1-3): ").strip()
+            choice = input("\nSelect a feature (0-3): ").strip()
             choice_num = int(choice)
-            if choice_num == 1:
+            if choice_num == 0:
+                return "cuda"
+            elif choice_num == 1:
                 return "detection"
             elif choice_num == 2:
                 return "compare"
             elif choice_num == 3:
                 return "train"
             else:
-                print("Please enter 1, 2, or 3")
+                print("Please enter 0, 1, 2, or 3")
         except ValueError:
             print("Please enter a valid number")
         except KeyboardInterrupt:
@@ -135,65 +182,71 @@ def main():
     print("YOLO Model Selection and Detection System")
     print("=" * 50)
     
-    # Step 1: Select feature
-    feature = select_feature()
+    while True:
+        feature = select_feature()
 
-    if feature == "train":
-        base_model = select_training_model()
-        print("\nStarting model training...")
-        print("-" * 30)
-        try:
-            from Engine.train import train_model
-            train_model(base_model=base_model)
-        except Exception as e:
-            print(f"Error running training: {e}")
-            return
-        print("\nTraining process completed!")
-        return
+        if feature == "cuda":
+            install_pytorch_cuda()
+            continue
 
-    # Step 2: Select model folder
-    selected_folder = select_model_folder()
-    if not selected_folder:
+        if feature == "train":
+            base_model = select_training_model()
+            print("\nStarting model training...")
+            print("-" * 30)
+            try:
+                from Engine.train import train_model
+                train_model(base_model=base_model)
+            except Exception as e:
+                print(f"Error running training: {e}")
+                return
+            print("\nTraining process completed!")
+            return
+
+        # Step 2: Select model folder
+        selected_folder = select_model_folder()
+        if not selected_folder:
+            return
+        
+        folder_path = os.path.join("models", selected_folder)
+        
+        if feature == "detection":
+            # Step 3: Select model file for detection
+            selected_model = select_model_file(folder_path)
+            if not selected_model:
+                return
+            
+            # Step 4: Create full model path
+            model_path = os.path.join(folder_path, selected_model)
+            print(f"\nSelected model path: {model_path}")
+            
+            # Step 5: Pass model path to start.py
+            print("\nStarting detection process...")
+            print("-" * 30)
+            
+            try:
+                from Engine.start import main as start_main
+                start_main(model_path)
+            except Exception as e:
+                print(f"Error running detection: {e}")
+                return
+            
+            print("\nDetection process completed!")
+        
+        elif feature == "compare":
+            # Step 3: Compare all models in the folder
+            print(f"\nStarting model comparison for '{selected_folder}' folder...")
+            print("-" * 50)
+            
+            try:
+                from Engine.compare import compare_models
+                compare_models(folder_path)
+            except Exception as e:
+                print(f"Error running model comparison: {e}")
+                return
+            
+            print("\nModel comparison completed!")
+
         return
-    
-    folder_path = os.path.join("models", selected_folder)
-    
-    if feature == "detection":
-        # Step 3: Select model file for detection
-        selected_model = select_model_file(folder_path)
-        if not selected_model:
-            return
-        
-        # Step 4: Create full model path
-        model_path = os.path.join(folder_path, selected_model)
-        print(f"\nSelected model path: {model_path}")
-        
-        # Step 5: Pass model path to start.py
-        print("\nStarting detection process...")
-        print("-" * 30)
-        
-        try:
-            from Engine.start import main as start_main
-            start_main(model_path)
-        except Exception as e:
-            print(f"Error running detection: {e}")
-            return
-        
-        print("\nDetection process completed!")
-    
-    elif feature == "compare":
-        # Step 3: Compare all models in the folder
-        print(f"\nStarting model comparison for '{selected_folder}' folder...")
-        print("-" * 50)
-        
-        try:
-            from Engine.compare import compare_models
-            compare_models(folder_path)
-        except Exception as e:
-            print(f"Error running model comparison: {e}")
-            return
-        
-        print("\nModel comparison completed!")
 
 if __name__ == "__main__":
     main()
