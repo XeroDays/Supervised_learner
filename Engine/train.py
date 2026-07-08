@@ -10,7 +10,13 @@ from ultralytics import YOLO
 TRAIN_SPLIT = 0.90
 DEFAULT_TRAIN_EPOCHS = 1500
 IMG_SIZE = 640
-BASE_MODEL = "yolov8n.yaml"
+DEFAULT_BASE_MODEL = "yolov8n.pt"
+
+TRAINING_MODEL_OPTIONS = [
+    {"label": "YOLOv8 (nano)", "base_model": "yolov8n.pt"},
+    {"label": "YOLO11 (nano)", "base_model": "yolo11n.pt"},
+    {"label": "YOLO26 (nano)", "base_model": "yolo26n.pt"},
+]
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
@@ -190,7 +196,10 @@ def zip_output_folder(output_dir, zip_name="output.zip"):
     return zip_path
 
 
-def train_model():
+def train_model(base_model=None):
+    if base_model is None:
+        base_model = DEFAULT_BASE_MODEL
+
     dataset_path = os.path.join(_project_root(), "dataset")
     if not os.path.exists(dataset_path):
         raise FileNotFoundError(f"Dataset folder not found: {dataset_path}")
@@ -209,8 +218,8 @@ def train_model():
         device = "cpu"
         print("WARNING: Training on CPU — install PyTorch cu128 for RTX 5060 Ti")
 
-    print(f"\nStarting training ({epochs} epochs, imgsz={IMG_SIZE})...")
-    model = YOLO(BASE_MODEL)
+    print(f"\nStarting training with {base_model} ({epochs} epochs, imgsz={IMG_SIZE})...")
+    model = YOLO(base_model)
     model.train(
         data=data_yaml_path,
         epochs=epochs,

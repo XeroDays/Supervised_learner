@@ -104,6 +104,31 @@ def select_feature():
             print("\nExiting...")
             sys.exit(0)
 
+
+def select_training_model():
+    """Allow user to select which YOLO model to train"""
+    from Engine.train import TRAINING_MODEL_OPTIONS
+
+    print("\nAvailable training models:")
+    print("-" * 30)
+    for i, option in enumerate(TRAINING_MODEL_OPTIONS, 1):
+        print(f"{i}. {option['label']}")
+
+    while True:
+        try:
+            choice = input(f"\nSelect a model (1-{len(TRAINING_MODEL_OPTIONS)}): ").strip()
+            choice_num = int(choice)
+            if 1 <= choice_num <= len(TRAINING_MODEL_OPTIONS):
+                selected = TRAINING_MODEL_OPTIONS[choice_num - 1]
+                print(f"Selected model: {selected['label']} ({selected['base_model']})")
+                return selected["base_model"]
+            print(f"Please enter a number between 1 and {len(TRAINING_MODEL_OPTIONS)}")
+        except ValueError:
+            print("Please enter a valid number")
+        except KeyboardInterrupt:
+            print("\nExiting...")
+            sys.exit(0)
+
 def main():
     """Main entry point for the application"""
     print("=" * 50)
@@ -114,11 +139,12 @@ def main():
     feature = select_feature()
 
     if feature == "train":
+        base_model = select_training_model()
         print("\nStarting model training...")
         print("-" * 30)
         try:
             from Engine.train import train_model
-            train_model()
+            train_model(base_model=base_model)
         except Exception as e:
             print(f"Error running training: {e}")
             return
