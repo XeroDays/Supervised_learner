@@ -7,7 +7,7 @@ import torch
 import yaml
 from ultralytics import YOLO
 
-TRAIN_SPLIT = 0.90
+TRAIN_SPLIT = 0.95
 DEFAULT_TRAIN_EPOCHS = 1500
 IMG_SIZE = 640
 DEFAULT_BASE_MODEL = "yolov8n.pt"
