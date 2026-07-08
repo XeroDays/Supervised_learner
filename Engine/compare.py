@@ -26,6 +26,37 @@ METRIC_COLUMNS = ["Precision", "Recall", "mAP50", "mAP50-95"]
 METRIC_COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
 
 
+def _safe_rmtree(path, label=None):
+    """Remove a directory tree, retrying on read-only or locked files (common on Windows)."""
+    if not os.path.exists(path):
+        print(f"{label or path}: does not exist, skipping")
+        return False
+
+    label = label or os.path.basename(path) or path
+    print(f"Clearing {label}...", flush=True)
+
+    def _onexc(func, fpath, exc):
+        import stat
+
+        if isinstance(exc, PermissionError):
+            try:
+                os.chmod(fpath, stat.S_IWRITE)
+                func(fpath)
+                return
+            except OSError:
+                pass
+        raise exc
+
+    try:
+        shutil.rmtree(path, onexc=_onexc)
+        print(f"Cleared {label}", flush=True)
+        return True
+    except OSError as e:
+        print(f"Warning: Could not fully clear {label} ({e})", flush=True)
+        print("Close any open files in runs/ or output/ (e.g. PNG previews) and try again.", flush=True)
+        return False
+
+
 def _model_sort_key(name):
     match = re.search(r"\d+", name)
     return int(match.group()) if match else name
@@ -165,29 +196,19 @@ def generate_metrics_line_chart(df, output_path):
 def clear_runs_folder():
     """Remove the runs folder before comparison so val outputs start fresh."""
     runs_path = os.path.join(os.getcwd(), "runs")
-    if os.path.exists(runs_path):
-        shutil.rmtree(runs_path)
-        print("Cleared runs folder")
-    else:
-        print("Runs folder does not exist, will be created by YOLO")
+    _safe_rmtree(runs_path, label="runs folder")
 
 
 def clear_output_folder():
     """Remove the output folder before comparison so results start fresh."""
     output_path = os.path.join(os.getcwd(), "output")
-    if os.path.exists(output_path):
-        shutil.rmtree(output_path)
-        print("Cleared output folder")
-    else:
-        print("Output folder does not exist, will be created")
+    _safe_rmtree(output_path, label="output folder")
 
 
 def clear_comparer_folder():
     """Remove the temporary comparer dataset folder after comparison."""
     comparer_path = os.path.join(os.path.dirname(__file__), "comparer")
-    if os.path.exists(comparer_path):
-        shutil.rmtree(comparer_path)
-        print("Cleared comparer folder")
+    _safe_rmtree(comparer_path, label="comparer folder")
 
 
 def create_data_yaml(folder_path):
@@ -235,9 +256,7 @@ def setup_comparer_dataset():
     labels_val_path = os.path.join(comparer_path, "labels", "val")
     
     # Clear existing comparer folder if it exists
-    if os.path.exists(comparer_path):
-        shutil.rmtree(comparer_path)
-        print("Cleared existing comparer folder")
+    _safe_rmtree(comparer_path, label="existing comparer folder")
     
     # Create directories
     os.makedirs(images_val_path, exist_ok=True)
@@ -274,11 +293,12 @@ def setup_comparer_dataset():
 
 def compare_models(folder_path):
     """Compare all models in the specified folder"""
+    print("Preparing comparison workspace...", flush=True)
     clear_runs_folder()
     clear_output_folder()
 
     # Setup comparer dataset first
-    print("Setting up comparer dataset...")
+    print("Setting up comparer dataset...", flush=True)
     comparer_path = setup_comparer_dataset()
 
     try:

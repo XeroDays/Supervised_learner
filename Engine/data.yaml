@@ -1,6 +1,5 @@
 names:
-- PriceTagSmall
-- PriceTagBig
-nc: 2
+- Transaction1
+nc: 1
 train: comparer/images/train
 val: comparer/images/val
