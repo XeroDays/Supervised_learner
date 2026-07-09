@@ -6,6 +6,8 @@ Workflow:
 2. Copy dataset/ into Engine/comparer (images/val + labels/val)
 3. Run inference on every comparer image and compare against YOLO labels
 4. Save annotated predictions + a 2-sheet Excel report under output/
+5. Copy images with accuracy < 100 into output/low-accuracy-images/
+6. Remove Engine/comparer when analysis finishes
 """
 
 import argparse
@@ -24,6 +26,8 @@ MODELS_DIR = "models"
 DATASET_DIR = "dataset"
 OUTPUT_DIR = "output"
 PREDICTIONS_DIRNAME = "predictions"
+LOW_ACCURACY_DIRNAME = "low-accuracy-images"
+LOW_ACCURACY_THRESHOLD = 100
 REPORT_FILENAME = "analysis_report.xlsx"
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.5
@@ -83,6 +87,10 @@ def _output_path():
 
 def _predictions_path():
     return os.path.join(_output_path(), PREDICTIONS_DIRNAME)
+
+
+def _low_accuracy_path():
+    return os.path.join(_output_path(), LOW_ACCURACY_DIRNAME)
 
 
 def _report_path():
@@ -532,6 +540,48 @@ def write_analysis_report(rows, model_path, report_path):
     return report_path
 
 
+def export_low_accuracy_images(rows, images_dir, labels_dir):
+    """Copy images/labels with Image Accuracy Score below the threshold."""
+    low_root = _low_accuracy_path()
+    low_images_dir = os.path.join(low_root, "images")
+    low_labels_dir = os.path.join(low_root, "labels")
+    os.makedirs(low_images_dir, exist_ok=True)
+    os.makedirs(low_labels_dir, exist_ok=True)
+
+    exported = 0
+    for row in rows:
+        if row["Image Accuracy Score"] >= LOW_ACCURACY_THRESHOLD:
+            continue
+
+        image_name = row["Image Name"]
+        src_image = os.path.join(images_dir, image_name)
+        if not os.path.exists(src_image):
+            print(f"  Warning: low-accuracy image missing, skipped: {image_name}")
+            continue
+
+        shutil.copy2(src_image, os.path.join(low_images_dir, image_name))
+
+        label_name = _label_path_for_image(image_name)
+        src_label = os.path.join(labels_dir, label_name)
+        if os.path.exists(src_label):
+            shutil.copy2(src_label, os.path.join(low_labels_dir, label_name))
+
+        exported += 1
+
+    print(
+        f"Exported {exported} low-accuracy image(s) "
+        f"(accuracy < {LOW_ACCURACY_THRESHOLD}) to: {low_root}"
+    )
+    return low_root, exported
+
+
+def _remove_comparer_folder():
+    comparer_path = _comparer_path()
+    if os.path.isdir(comparer_path):
+        shutil.rmtree(comparer_path, ignore_errors=True)
+        print("Removed comparer folder")
+
+
 # ---------------------------------------------------------------------------
 # Main analysis driver
 # ---------------------------------------------------------------------------
@@ -545,49 +595,56 @@ def run_analysis(model_path, conf_threshold=CONF_THRESHOLD, iou_threshold=IOU_TH
     _clear_output_folder()
     _, images_dir, labels_dir = setup_comparer_dataset()
 
-    print("Loading model...")
-    model = YOLO(model_path)
-    class_names = load_class_names(model_path, model)
+    try:
+        print("Loading model...")
+        model = YOLO(model_path)
+        class_names = load_class_names(model_path, model)
 
-    image_files = sorted(
-        f for f in os.listdir(images_dir) if f.lower().endswith(IMAGE_EXTENSIONS)
-    )
-    if not image_files:
-        raise FileNotFoundError(f"No images found in comparer folder: {images_dir}")
-
-    print(f"Processing images... ({len(image_files)} total)")
-    rows = []
-    predictions_dir = _predictions_path()
-
-    for image_name in image_files:
-        image_path = os.path.join(images_dir, image_name)
-        label_path = os.path.join(labels_dir, _label_path_for_image(image_name))
-
-        row, annotated = analyze_single_image(
-            model,
-            image_path,
-            label_path,
-            class_names,
-            conf_threshold=conf_threshold,
-            iou_threshold=iou_threshold,
+        image_files = sorted(
+            f for f in os.listdir(images_dir) if f.lower().endswith(IMAGE_EXTENSIONS)
         )
-        rows.append(row)
+        if not image_files:
+            raise FileNotFoundError(f"No images found in comparer folder: {images_dir}")
 
-        pred_out = os.path.join(predictions_dir, image_name)
-        cv2.imwrite(pred_out, annotated)
-        print(
-            f"  {image_name}: status={row['Detection Status']}, "
-            f"accuracy={row['Image Accuracy Score']}, "
-            f"FN={row['Missing Detection Count']}, FP={row['False Positive Count']}"
-        )
+        print(f"Processing images... ({len(image_files)} total)")
+        rows = []
+        predictions_dir = _predictions_path()
 
-    print("Generating Excel...")
-    report_path = write_analysis_report(rows, model_path, _report_path())
+        for image_name in image_files:
+            image_path = os.path.join(images_dir, image_name)
+            label_path = os.path.join(labels_dir, _label_path_for_image(image_name))
 
-    print("\nCompleted:")
-    print(f"  {report_path}")
-    print(f"  {predictions_dir}/")
-    return report_path, rows
+            row, annotated = analyze_single_image(
+                model,
+                image_path,
+                label_path,
+                class_names,
+                conf_threshold=conf_threshold,
+                iou_threshold=iou_threshold,
+            )
+            rows.append(row)
+
+            pred_out = os.path.join(predictions_dir, image_name)
+            cv2.imwrite(pred_out, annotated)
+            print(
+                f"  {image_name}: status={row['Detection Status']}, "
+                f"accuracy={row['Image Accuracy Score']}, "
+                f"FN={row['Missing Detection Count']}, FP={row['False Positive Count']}"
+            )
+
+        print("Exporting low-accuracy images...")
+        low_root, _ = export_low_accuracy_images(rows, images_dir, labels_dir)
+
+        print("Generating Excel...")
+        report_path = write_analysis_report(rows, model_path, _report_path())
+
+        print("\nCompleted:")
+        print(f"  {report_path}")
+        print(f"  {predictions_dir}/")
+        print(f"  {low_root}/")
+        return report_path, rows
+    finally:
+        _remove_comparer_folder()
 
 
 def main(model_path=None, conf_threshold=CONF_THRESHOLD, iou_threshold=IOU_THRESHOLD):
