@@ -2,6 +2,7 @@ import argparse
 import os
 import random
 import shutil
+import urllib.request
 
 import cv2
 import pandas as pd
@@ -24,6 +25,14 @@ TRAINING_MODEL_OPTIONS = [
     {"label": "YOLO11 (nano)", "base_model": "yolo11n.pt"},
     {"label": "YOLO26 (nano)", "base_model": "yolo26n.pt"},
 ]
+
+# Official Ultralytics release assets used when local weights are missing
+# (older ultralytics packages may not auto-download YOLO26).
+BASE_MODEL_DOWNLOAD_URLS = {
+    "yolov8n.pt": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.pt",
+    "yolo11n.pt": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt",
+    "yolo26n.pt": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt",
+}
 
 OUTPUT_COLUMNS = [
     "image",
@@ -294,6 +303,65 @@ def _detect_device():
     return "cpu"
 
 
+def _download_base_model(filename, dest_path):
+    url = BASE_MODEL_DOWNLOAD_URLS.get(filename)
+    if not url:
+        raise FileNotFoundError(
+            f"Base model '{filename}' was not found locally and no download URL is configured. "
+            f"Place '{filename}' in the project root and try again."
+        )
+
+    print(f"Downloading missing base model: {filename}")
+    print(f"  from {url}")
+    try:
+        urllib.request.urlretrieve(url, dest_path)
+    except Exception as exc:
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
+        raise FileNotFoundError(
+            f"Failed to download '{filename}'. Check your internet connection, "
+            f"or place '{filename}' in the project root manually.\nOriginal error: {exc}"
+        ) from exc
+
+    if not os.path.exists(dest_path) or os.path.getsize(dest_path) < 1_000_000:
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
+        raise FileNotFoundError(
+            f"Downloaded '{filename}' looks invalid. Place a valid '{filename}' in the project root."
+        )
+
+    print(f"Downloaded: {dest_path}")
+    return dest_path
+
+
+def _resolve_base_model(base_model):
+    """Return a local path to base weights, downloading if needed."""
+    if os.path.isabs(base_model) or os.path.dirname(base_model):
+        if os.path.exists(base_model):
+            return os.path.abspath(base_model)
+        raise FileNotFoundError(f"Base model not found: {base_model}")
+
+    filename = os.path.basename(base_model)
+    local_path = os.path.join(_project_root(), filename)
+    if os.path.exists(local_path):
+        return local_path
+
+    # Let Ultralytics try its built-in download first (works for yolov8/yolo11 on older packages).
+    try:
+        YOLO(filename)
+        if os.path.exists(local_path):
+            return local_path
+        if os.path.exists(filename):
+            return os.path.abspath(filename)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        # Fall through to our explicit download for known models.
+        pass
+
+    return _download_base_model(filename, local_path)
+
+
 def _build_fold_dataset(pairs, val_indices, classes, fold_idx):
     """Create an isolated train/val dataset for one fold and return (data_yaml_path, val_pairs)."""
     dataset_path = _dataset_path()
@@ -389,6 +457,10 @@ def analyze_dataset_kfold(
         )
     classes = _read_classes(dataset_path)
 
+    # Resolve weights before clearing output / starting long fold training.
+    resolved_base_model = _resolve_base_model(base_model)
+    print(f"Using base model weights: {resolved_base_model}")
+
     k = max(2, min(k, len(pairs)))
 
     indices = list(range(len(pairs)))
@@ -409,7 +481,7 @@ def analyze_dataset_kfold(
     device = _detect_device()
     print(
         f"\nK-Fold analysis: {len(pairs)} images, k={k} folds, "
-        f"base_model={base_model}, epochs={epochs}"
+        f"base_model={resolved_base_model}, epochs={epochs}"
     )
     print(f"PyTorch: {torch.__version__}")
 
@@ -427,7 +499,7 @@ def analyze_dataset_kfold(
 
             data_yaml_path, val_pairs = _build_fold_dataset(pairs, val_set, classes, fold_idx)
             best_weights_path = _train_fold(
-                base_model, data_yaml_path, epochs, imgsz, device, fold_idx
+                resolved_base_model, data_yaml_path, epochs, imgsz, device, fold_idx
             )
 
             print(f"Scoring {len(val_pairs)} held-out images for fold {fold_idx + 1}...")
