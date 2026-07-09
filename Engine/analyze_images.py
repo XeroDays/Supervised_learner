@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import random
 import re
@@ -14,10 +15,15 @@ from ultralytics import YOLO
 
 DEFAULT_CONF_THRESHOLD = 0.25
 DEFAULT_IOU_THRESHOLD = 0.5
-DEFAULT_K = 5
 DEFAULT_EPOCHS = 1500
 IMG_SIZE = 640
 RANDOM_SEED = 42
+
+# Dynamic K-Fold sizing
+SMALL_DATASET_MAX = 20          # n <= this → always use 2 folds
+K_MIN = 2
+K_MAX = 10
+MIN_TRAIN_PER_FOLD = 8
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
@@ -466,9 +472,44 @@ def _train_fold(base_model, data_yaml_path, epochs, imgsz, device, fold_idx):
     return best_weights_path
 
 
+def choose_k_folds(n_images, k=None):
+    """
+    Choose number of K-Fold models from dataset size.
+
+    Rules:
+    - n <= 20 → always 2 models
+    - n > 20  → round(sqrt(n)), clamped to [2, 10]
+    - never more folds than images
+    - prefer enough train images per fold when possible
+    - if k is provided, use it as an override (still clamped to [2, n])
+    """
+    if n_images < 2:
+        raise ValueError("Need at least 2 images for K-Fold.")
+
+    if k is not None:
+        chosen = max(K_MIN, min(int(k), n_images))
+        return chosen, "manual override"
+
+    if n_images <= SMALL_DATASET_MAX:
+        return K_MIN, f"small dataset (n<={SMALL_DATASET_MAX})"
+
+    chosen = int(round(math.sqrt(n_images)))
+    chosen = max(K_MIN, min(K_MAX, chosen))
+    chosen = min(chosen, n_images)
+
+    # Reduce k until each fold has enough training images (when possible).
+    while chosen > K_MIN:
+        train_per_fold = n_images * (chosen - 1) / chosen
+        if train_per_fold >= MIN_TRAIN_PER_FOLD:
+            break
+        chosen -= 1
+
+    return chosen, f"dynamic sqrt(n) clamped to [{K_MIN}, {K_MAX}]"
+
+
 def analyze_dataset_kfold(
     base_model=DEFAULT_BASE_MODEL,
-    k=DEFAULT_K,
+    k=None,
     epochs=DEFAULT_EPOCHS,
     imgsz=IMG_SIZE,
     conf_threshold=DEFAULT_CONF_THRESHOLD,
@@ -491,7 +532,7 @@ def analyze_dataset_kfold(
     resolved_base_model = _resolve_base_model(base_model)
     print(f"Using base model weights: {resolved_base_model}")
 
-    k = max(2, min(k, len(pairs)))
+    k, k_reason = choose_k_folds(len(pairs), k=k)
 
     indices = list(range(len(pairs)))
     random.Random(RANDOM_SEED).shuffle(indices)
@@ -509,7 +550,7 @@ def analyze_dataset_kfold(
 
     device = _detect_device()
     print(
-        f"\nK-Fold analysis: {len(pairs)} images, k={k} folds, "
+        f"\nK-Fold analysis: {len(pairs)} images, k={k} folds ({k_reason}), "
         f"base_model={resolved_base_model}, epochs={epochs}"
     )
     print(f"PyTorch: {torch.__version__}")
@@ -573,13 +614,13 @@ def analyze_dataset_kfold(
 
 def main(
     base_model=DEFAULT_BASE_MODEL,
-    k=DEFAULT_K,
+    k=None,
     epochs=DEFAULT_EPOCHS,
     conf_threshold=DEFAULT_CONF_THRESHOLD,
     iou_threshold=DEFAULT_IOU_THRESHOLD,
 ):
     print(f"Base model: {base_model}")
-    print(f"Folds (k): {k}")
+    print(f"Folds (k): {'auto' if k is None else k}")
     print(f"Epochs per fold: {epochs}")
     print(f"Confidence threshold: {conf_threshold}")
     print(f"IoU match threshold: {iou_threshold}")
@@ -602,7 +643,12 @@ if __name__ == "__main__":
         default=DEFAULT_BASE_MODEL,
         help=f"Base YOLO model to train each fold from (default: {DEFAULT_BASE_MODEL})",
     )
-    parser.add_argument("--k", type=int, default=DEFAULT_K, help=f"Number of folds (default: {DEFAULT_K})")
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=None,
+        help="Number of folds (default: auto — 2 for n<=20, else round(sqrt(n)) capped at 10)",
+    )
     parser.add_argument(
         "--epochs", type=int, default=DEFAULT_EPOCHS, help=f"Epochs per fold (default: {DEFAULT_EPOCHS})"
     )
