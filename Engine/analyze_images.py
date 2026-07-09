@@ -6,8 +6,9 @@ Workflow:
 2. Copy dataset/ into Engine/comparer (images/val + labels/val)
 3. Run inference on every comparer image and compare against YOLO labels
 4. Save annotated predictions + a 2-sheet Excel report under output/
-5. Copy images with accuracy < 100 into output/low-accuracy-images/
+5. Copy low-accuracy images + labels + classes.txt flat into output/low-accuracy-images/
 6. Remove Engine/comparer when analysis finishes
+   (output/ is cleared at analysis start so each run is fresh)
 """
 
 import argparse
@@ -540,13 +541,10 @@ def write_analysis_report(rows, model_path, report_path):
     return report_path
 
 
-def export_low_accuracy_images(rows, images_dir, labels_dir):
-    """Copy images/labels with Image Accuracy Score below the threshold."""
+def export_low_accuracy_images(rows, images_dir, labels_dir, model_path):
+    """Copy low-accuracy images, labels, and classes.txt into one flat folder."""
     low_root = _low_accuracy_path()
-    low_images_dir = os.path.join(low_root, "images")
-    low_labels_dir = os.path.join(low_root, "labels")
-    os.makedirs(low_images_dir, exist_ok=True)
-    os.makedirs(low_labels_dir, exist_ok=True)
+    os.makedirs(low_root, exist_ok=True)
 
     exported = 0
     for row in rows:
@@ -559,14 +557,29 @@ def export_low_accuracy_images(rows, images_dir, labels_dir):
             print(f"  Warning: low-accuracy image missing, skipped: {image_name}")
             continue
 
-        shutil.copy2(src_image, os.path.join(low_images_dir, image_name))
+        shutil.copy2(src_image, os.path.join(low_root, image_name))
 
         label_name = _label_path_for_image(image_name)
         src_label = os.path.join(labels_dir, label_name)
         if os.path.exists(src_label):
-            shutil.copy2(src_label, os.path.join(low_labels_dir, label_name))
+            shutil.copy2(src_label, os.path.join(low_root, label_name))
 
         exported += 1
+
+    # Prefer classes.txt next to the selected model; fall back to dataset/classes.txt.
+    classes_candidates = [
+        os.path.join(os.path.dirname(model_path), "classes.txt"),
+        os.path.join(_dataset_path(), "classes.txt"),
+    ]
+    classes_copied = False
+    for classes_src in classes_candidates:
+        if os.path.exists(classes_src):
+            shutil.copy2(classes_src, os.path.join(low_root, "classes.txt"))
+            classes_copied = True
+            print(f"Copied classes.txt from: {classes_src}")
+            break
+    if not classes_copied:
+        print("Warning: classes.txt not found next to model or in dataset/")
 
     print(
         f"Exported {exported} low-accuracy image(s) "
@@ -633,7 +646,7 @@ def run_analysis(model_path, conf_threshold=CONF_THRESHOLD, iou_threshold=IOU_TH
             )
 
         print("Exporting low-accuracy images...")
-        low_root, _ = export_low_accuracy_images(rows, images_dir, labels_dir)
+        low_root, _ = export_low_accuracy_images(rows, images_dir, labels_dir, model_path)
 
         print("Generating Excel...")
         report_path = write_analysis_report(rows, model_path, _report_path())
