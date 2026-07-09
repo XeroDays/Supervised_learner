@@ -30,6 +30,23 @@ apt install -y python3-venv python3-pip
 cd Supervised_learner
 ```
 
+## Create & Activate Python Env (manual)
+
+```bash
+cd /root/Supervised_learner
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+python main.py
+```
+
+To leave the env later:
+
+```bash
+deactivate
+```
+
 ## Test GPU (CUDA dry run)
 
 ```bash
