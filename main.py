@@ -130,10 +130,11 @@ def select_feature():
     print("1. Process Images (Detection)")
     print("2. Compare Models")
     print("3. Train Model")
+    print("4. Analyze Dataset Images (CSV)")
     
     while True:
         try:
-            choice = input("\nSelect a feature (0-3): ").strip()
+            choice = input("\nSelect a feature (0-4): ").strip()
             choice_num = int(choice)
             if choice_num == 0:
                 return "cuda"
@@ -143,8 +144,10 @@ def select_feature():
                 return "compare"
             elif choice_num == 3:
                 return "train"
+            elif choice_num == 4:
+                return "analyze"
             else:
-                print("Please enter 0, 1, 2, or 3")
+                print("Please enter 0, 1, 2, 3, or 4")
         except ValueError:
             print("Please enter a valid number")
         except KeyboardInterrupt:
@@ -200,6 +203,32 @@ def main():
                 print(f"Error running training: {e}")
                 return
             print("\nTraining process completed!")
+            return
+
+        if feature == "analyze":
+            default_model = os.path.join("output", "best.pt")
+            if os.path.exists(default_model):
+                model_path = default_model
+                print(f"\nUsing trained model: {model_path}")
+            else:
+                selected_folder = select_model_folder()
+                if not selected_folder:
+                    return
+                folder_path = os.path.join("models", selected_folder)
+                selected_model = select_model_file(folder_path)
+                if not selected_model:
+                    return
+                model_path = os.path.join(folder_path, selected_model)
+
+            print("\nStarting per-image dataset analysis...")
+            print("-" * 30)
+            try:
+                from Engine.analyze_images import main as analyze_main
+                analyze_main(model_path=model_path)
+            except Exception as e:
+                print(f"Error running image analysis: {e}")
+                return
+            print("\nImage analysis completed!")
             return
 
         # Step 2: Select model folder
