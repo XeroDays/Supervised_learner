@@ -12,10 +12,10 @@ import matplotlib.pyplot as plt
 VAL_PLOT_FILES = [
     "confusion_matrix_normalized.png",
     "confusion_matrix.png",
-    "F1_curve.png",
-    "P_curve.png",
-    "PR_curve.png",
-    "R_curve.png",
+    "BoxF1_curve.png",
+    "BoxP_curve.png",
+    "BoxPR_curve.png",
+    "BoxR_curve.png",
 ]
 
 TARGET_CELL_WIDTH = 520
@@ -94,12 +94,24 @@ def _make_labeled_cell(model_name, img):
     return cell
 
 
+def _resolve_plot_path(run_dir, plot_filename):
+    """Find a val plot, falling back from Box*-prefixed names to legacy names."""
+    primary = os.path.join(run_dir, plot_filename)
+    if os.path.exists(primary):
+        return primary
+    if plot_filename.startswith("Box"):
+        legacy = os.path.join(run_dir, plot_filename[3:])  # BoxF1_curve.png -> F1_curve.png
+        if os.path.exists(legacy):
+            return legacy
+    return None
+
+
 def combine_val_plots_grid(model_run_dirs, plot_filename, output_path):
     """Stitch the same YOLO val plot from each model into a labeled grid image."""
     cells = []
     for model_name, run_dir in model_run_dirs.items():
-        img_path = os.path.join(run_dir, plot_filename)
-        if not os.path.exists(img_path):
+        img_path = _resolve_plot_path(run_dir, plot_filename)
+        if img_path is None:
             print(f"  Warning: missing {plot_filename} for {model_name}")
             continue
         img = cv2.imread(img_path)
@@ -394,7 +406,9 @@ def compare_models(folder_path):
         if model_run_dirs:
             print("\n📈 Generating comparison grid images...")
             for plot_file in VAL_PLOT_FILES:
-                out_name = plot_file.replace(".png", "_comparison.png")
+                # Strip Box prefix so outputs stay F1_curve_comparison.png etc.
+                display_name = plot_file[3:] if plot_file.startswith("Box") else plot_file
+                out_name = display_name.replace(".png", "_comparison.png")
                 out_path = os.path.join(output_dir, out_name)
                 if combine_val_plots_grid(model_run_dirs, plot_file, out_path):
                     print(f"  Comparison grid saved: {out_path}")
