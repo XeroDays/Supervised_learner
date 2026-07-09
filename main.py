@@ -130,7 +130,7 @@ def select_feature():
     print("1. Process Images (Detection)")
     print("2. Compare Models")
     print("3. Train Model")
-    print("4. Analyze Dataset Images (K-Fold Cross-Validation)")
+    print("4. Analyze Dataset Images")
     
     while True:
         try:
@@ -180,55 +180,6 @@ def select_training_model():
             sys.exit(0)
 
 
-def select_analysis_base_model():
-    """Allow user to select which YOLO base model each K-Fold model trains from."""
-    from Engine.analyze_images import TRAINING_MODEL_OPTIONS
-
-    print("\nAvailable base models for K-Fold analysis:")
-    print("-" * 40)
-    for i, option in enumerate(TRAINING_MODEL_OPTIONS, 1):
-        print(f"{i}. {option['label']}")
-
-    while True:
-        try:
-            choice = input(f"\nSelect a base model (1-{len(TRAINING_MODEL_OPTIONS)}): ").strip()
-            choice_num = int(choice)
-            if 1 <= choice_num <= len(TRAINING_MODEL_OPTIONS):
-                selected = TRAINING_MODEL_OPTIONS[choice_num - 1]
-                print(f"Selected base model: {selected['label']} ({selected['base_model']})")
-                return selected["base_model"]
-            print(f"Please enter a number between 1 and {len(TRAINING_MODEL_OPTIONS)}")
-        except ValueError:
-            print("Please enter a valid number")
-        except KeyboardInterrupt:
-            print("\nExiting...")
-            sys.exit(0)
-
-
-def prompt_analysis_epochs():
-    """Prompt for epochs used to train each fold during analysis."""
-    from Engine.analyze_images import DEFAULT_EPOCHS
-
-    while True:
-        try:
-            choice = input(
-                f"\nEnter epochs per fold (default: {DEFAULT_EPOCHS}, press Enter to use default): "
-            ).strip()
-            if not choice:
-                print(f"Using default: {DEFAULT_EPOCHS} epochs")
-                return DEFAULT_EPOCHS
-            epochs = int(choice)
-            if epochs < 1:
-                print("Please enter a positive number")
-                continue
-            return epochs
-        except ValueError:
-            print("Please enter a valid number")
-        except KeyboardInterrupt:
-            print("\nExiting...")
-            sys.exit(0)
-
-
 def main():
     """Main entry point for the application"""
     print("=" * 50)
@@ -256,14 +207,11 @@ def main():
             return
 
         if feature == "analyze":
-            base_model = select_analysis_base_model()
-            epochs = prompt_analysis_epochs()
-
-            print("\nStarting K-Fold cross-validation analysis...")
+            print("\nStarting dataset image analysis...")
             print("-" * 30)
             try:
                 from Engine.analyze_images import main as analyze_main
-                analyze_main(base_model=base_model, epochs=epochs)
+                analyze_main()
             except Exception as e:
                 print(f"Error running image analysis: {e}")
                 return
