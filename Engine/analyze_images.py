@@ -1,18 +1,33 @@
 import argparse
-import csv
 import os
+import random
+import shutil
 
 import cv2
+import pandas as pd
+import torch
 import yaml
 from ultralytics import YOLO
 
-from Engine.train import IMAGE_EXTENSIONS, prepare_comparer_dataset, write_data_yaml, read_classes
-
 DEFAULT_CONF_THRESHOLD = 0.25
 DEFAULT_IOU_THRESHOLD = 0.5
-CSV_COLUMNS = [
+DEFAULT_K = 5
+DEFAULT_EPOCHS = 1500
+IMG_SIZE = 640
+RANDOM_SEED = 42
+
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
+
+DEFAULT_BASE_MODEL = "yolov8n.pt"
+TRAINING_MODEL_OPTIONS = [
+    {"label": "YOLOv8 (nano)", "base_model": "yolov8n.pt"},
+    {"label": "YOLO11 (nano)", "base_model": "yolo11n.pt"},
+    {"label": "YOLO26 (nano)", "base_model": "yolo26n.pt"},
+]
+
+OUTPUT_COLUMNS = [
     "image",
-    "split",
+    "fold",
     "gt_boxes",
     "pred_boxes",
     "true_positives",
@@ -28,6 +43,8 @@ CSV_COLUMNS = [
     "error_score",
     "impact_rank",
 ]
+EXCEL_FILENAME = "image_analysis.xlsx"
+KFOLD_WORK_DIRNAME = "kfold_work"
 
 
 def _engine_dir():
@@ -38,8 +55,61 @@ def _project_root():
     return os.getcwd()
 
 
+def _dataset_path():
+    return os.path.join(_project_root(), "dataset")
+
+
+def _kfold_work_path():
+    return os.path.join(_engine_dir(), KFOLD_WORK_DIRNAME)
+
+
 def _label_path_for_image(image_name):
     return image_name.rsplit(".", 1)[0] + ".txt"
+
+
+def _pair_dataset_files(dataset_path):
+    all_files = [
+        f for f in os.listdir(dataset_path)
+        if os.path.isfile(os.path.join(dataset_path, f))
+    ]
+    txt_files = {f for f in all_files if f.lower().endswith(".txt") and f != "classes.txt"}
+
+    paired_files = []
+    for image_file in all_files:
+        if not image_file.lower().endswith(IMAGE_EXTENSIONS):
+            continue
+        label_file = _label_path_for_image(image_file)
+        if label_file in txt_files:
+            paired_files.append((image_file, label_file))
+
+    return sorted(paired_files)
+
+
+def _read_classes(dataset_path):
+    classes_file = os.path.join(dataset_path, "classes.txt")
+    if not os.path.exists(classes_file):
+        raise FileNotFoundError("classes.txt not found in dataset folder")
+
+    classes = []
+    with open(classes_file, "r", encoding="utf-8") as f:
+        for line in f:
+            class_name = line.strip()
+            if class_name:
+                classes.append(class_name)
+
+    if not classes:
+        raise ValueError("No classes found in dataset/classes.txt")
+
+    return classes
+
+
+def _clear_output_folder():
+    output_path = os.path.join(_project_root(), "output")
+    if os.path.exists(output_path):
+        shutil.rmtree(output_path, ignore_errors=True)
+        print("Cleared output folder")
+    os.makedirs(output_path, exist_ok=True)
+    return output_path
 
 
 def _xywhn_to_xyxy(cx, cy, width, height, img_w, img_h):
@@ -211,167 +281,241 @@ def analyze_image(model, image_path, label_path, conf_threshold, iou_threshold):
     }
 
 
-def _resolve_split_paths(data_yaml_path, split):
-    with open(data_yaml_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    images_rel = data.get(split)
-    if not images_rel:
-        raise ValueError(f"Split '{split}' not found in {data_yaml_path}")
-
-    engine_dir = os.path.dirname(os.path.abspath(data_yaml_path))
-    images_rel = images_rel.replace("\\", "/")
-    labels_rel = images_rel.replace(f"images/{split}", f"labels/{split}")
-    images_dir = os.path.normpath(os.path.join(engine_dir, images_rel.replace("/", os.sep)))
-    labels_dir = os.path.normpath(os.path.join(engine_dir, labels_rel.replace("/", os.sep)))
-
-    if not os.path.isdir(images_dir):
-        raise FileNotFoundError(f"Images directory not found: {images_dir}")
-    if not os.path.isdir(labels_dir):
-        raise FileNotFoundError(f"Labels directory not found: {labels_dir}")
-
-    return images_dir, labels_dir
+def _save_excel(rows, output_excel_path):
+    df = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
+    df.to_excel(output_excel_path, index=False, sheet_name="Image Analysis")
 
 
-def _ensure_comparer_dataset():
-    comparer_path = os.path.join(_engine_dir(), "comparer")
-    data_yaml_path = os.path.join(_engine_dir(), "data.yaml")
+def _detect_device():
+    if torch.cuda.is_available():
+        print(f"Training folds on GPU: {torch.cuda.get_device_name(0)}")
+        return 0
+    print("WARNING: No GPU detected — folds will train on CPU (slow).")
+    return "cpu"
 
-    if os.path.isdir(comparer_path) and os.path.exists(data_yaml_path):
-        return data_yaml_path
 
-    dataset_path = os.path.join(_project_root(), "dataset")
-    if not os.path.isdir(dataset_path):
-        raise FileNotFoundError(
-            "No comparer dataset found. Train a model first or place paired files in dataset/."
+def _build_fold_dataset(pairs, val_indices, classes, fold_idx):
+    """Create an isolated train/val dataset for one fold and return (data_yaml_path, val_pairs)."""
+    dataset_path = _dataset_path()
+    fold_root = os.path.join(_kfold_work_path(), f"fold_{fold_idx}")
+
+    train_images_dir = os.path.join(fold_root, "images", "train")
+    val_images_dir = os.path.join(fold_root, "images", "val")
+    train_labels_dir = os.path.join(fold_root, "labels", "train")
+    val_labels_dir = os.path.join(fold_root, "labels", "val")
+
+    for directory in (train_images_dir, val_images_dir, train_labels_dir, val_labels_dir):
+        os.makedirs(directory, exist_ok=True)
+
+    val_pairs = []
+    for index, (image_file, label_file) in enumerate(pairs):
+        if index in val_indices:
+            images_dir, labels_dir = val_images_dir, val_labels_dir
+            val_pairs.append(
+                (
+                    image_file,
+                    os.path.join(dataset_path, image_file),
+                    os.path.join(dataset_path, label_file),
+                )
+            )
+        else:
+            images_dir, labels_dir = train_images_dir, train_labels_dir
+
+        shutil.copy2(
+            os.path.join(dataset_path, image_file),
+            os.path.join(images_dir, image_file),
+        )
+        shutil.copy2(
+            os.path.join(dataset_path, label_file),
+            os.path.join(labels_dir, label_file),
         )
 
-    classes, _ = read_classes(dataset_path)
-    prepare_comparer_dataset(dataset_path)
-    return write_data_yaml(classes)
+    data_yaml_content = {
+        "train": train_images_dir.replace(os.sep, "/"),
+        "val": val_images_dir.replace(os.sep, "/"),
+        "nc": len(classes),
+        "names": classes,
+    }
+    data_yaml_path = os.path.join(fold_root, "data.yaml")
+    with open(data_yaml_path, "w", encoding="utf-8") as f:
+        yaml.dump(data_yaml_content, f, default_flow_style=False)
+
+    return data_yaml_path, val_pairs
 
 
-def analyze_dataset(
-    model_path,
-    output_csv_path=None,
-    splits=None,
+def _train_fold(base_model, data_yaml_path, epochs, imgsz, device, fold_idx):
+    """Train a fresh model for one fold and return the path to its best.pt."""
+    work_dir = _kfold_work_path()
+    run_name = f"fold_{fold_idx}"
+
+    model = YOLO(base_model)
+    model.train(
+        data=data_yaml_path,
+        epochs=epochs,
+        imgsz=imgsz,
+        device=device,
+        workers=8 if device != "cpu" else 0,
+        project=work_dir,
+        name=run_name,
+        exist_ok=True,
+    )
+
+    best_weights_path = os.path.join(work_dir, run_name, "weights", "best.pt")
+    if not os.path.exists(best_weights_path):
+        raise FileNotFoundError(
+            f"Fold {fold_idx} training finished but weights not found: {best_weights_path}"
+        )
+    return best_weights_path
+
+
+def analyze_dataset_kfold(
+    base_model=DEFAULT_BASE_MODEL,
+    k=DEFAULT_K,
+    epochs=DEFAULT_EPOCHS,
+    imgsz=IMG_SIZE,
+    conf_threshold=DEFAULT_CONF_THRESHOLD,
+    iou_threshold=DEFAULT_IOU_THRESHOLD,
+    output_excel_path=None,
+):
+    dataset_path = _dataset_path()
+    if not os.path.isdir(dataset_path):
+        raise FileNotFoundError(f"Dataset folder not found: {dataset_path}")
+
+    pairs = _pair_dataset_files(dataset_path)
+    if len(pairs) < 2:
+        raise ValueError(
+            "K-Fold needs at least 2 labeled images in dataset/. "
+            f"Found {len(pairs)}."
+        )
+    classes = _read_classes(dataset_path)
+
+    k = max(2, min(k, len(pairs)))
+
+    indices = list(range(len(pairs)))
+    random.Random(RANDOM_SEED).shuffle(indices)
+    folds = [[] for _ in range(k)]
+    for position, index in enumerate(indices):
+        folds[position % k].append(index)
+
+    output_dir = _clear_output_folder()
+    if output_excel_path is None:
+        output_excel_path = os.path.join(output_dir, EXCEL_FILENAME)
+
+    work_path = _kfold_work_path()
+    if os.path.isdir(work_path):
+        shutil.rmtree(work_path, ignore_errors=True)
+    os.makedirs(work_path, exist_ok=True)
+
+    device = _detect_device()
+    print(
+        f"\nK-Fold analysis: {len(pairs)} images, k={k} folds, "
+        f"base_model={base_model}, epochs={epochs}"
+    )
+    print(f"PyTorch: {torch.__version__}")
+
+    rows = []
+    try:
+        for fold_idx, val_index_list in enumerate(folds):
+            if not val_index_list:
+                continue
+
+            val_set = set(val_index_list)
+            print(
+                f"\n===== Fold {fold_idx + 1}/{k} "
+                f"({len(pairs) - len(val_set)} train, {len(val_set)} val) ====="
+            )
+
+            data_yaml_path, val_pairs = _build_fold_dataset(pairs, val_set, classes, fold_idx)
+            best_weights_path = _train_fold(
+                base_model, data_yaml_path, epochs, imgsz, device, fold_idx
+            )
+
+            print(f"Scoring {len(val_pairs)} held-out images for fold {fold_idx + 1}...")
+            model = YOLO(best_weights_path)
+            for image_name, image_path, label_path in val_pairs:
+                metrics = analyze_image(
+                    model,
+                    image_path,
+                    label_path,
+                    conf_threshold=conf_threshold,
+                    iou_threshold=iou_threshold,
+                )
+                rows.append(
+                    {
+                        "image": image_name,
+                        "fold": fold_idx + 1,
+                        **metrics,
+                    }
+                )
+                print(
+                    f"  {image_name}: error_score={metrics['error_score']:.2f}, "
+                    f"FP={metrics['false_positives']}, FN={metrics['false_negatives']}, "
+                    f"mean_iou={metrics['mean_iou']:.2f}"
+                )
+
+        rows.sort(key=lambda row: row["error_score"], reverse=True)
+        for rank, row in enumerate(rows, start=1):
+            row["impact_rank"] = rank
+
+        _save_excel(rows, output_excel_path)
+
+        print(f"\nSaved image analysis Excel: {output_excel_path}")
+        if rows:
+            worst = rows[0]
+            print(
+                f"Worst image: {worst['image']} (fold {worst['fold']}) "
+                f"— error_score={worst['error_score']}, impact_rank=1"
+            )
+
+        return output_excel_path, rows
+    finally:
+        shutil.rmtree(work_path, ignore_errors=True)
+        print("Removed temporary kfold_work folder")
+
+
+def main(
+    base_model=DEFAULT_BASE_MODEL,
+    k=DEFAULT_K,
+    epochs=DEFAULT_EPOCHS,
     conf_threshold=DEFAULT_CONF_THRESHOLD,
     iou_threshold=DEFAULT_IOU_THRESHOLD,
 ):
-    if splits is None:
-        splits = ("val",)
-
-    if output_csv_path is None:
-        output_dir = os.path.join(_project_root(), "output")
-        os.makedirs(output_dir, exist_ok=True)
-        output_csv_path = os.path.join(output_dir, "image_analysis.csv")
-
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model not found: {model_path}")
-
-    data_yaml_path = _ensure_comparer_dataset()
-    model = YOLO(model_path)
-
-    rows = []
-    for split in splits:
-        images_dir, labels_dir = _resolve_split_paths(data_yaml_path, split)
-        image_files = sorted(
-            f for f in os.listdir(images_dir) if f.lower().endswith(IMAGE_EXTENSIONS)
-        )
-
-        print(f"\nAnalyzing {len(image_files)} {split} images...")
-        for image_name in image_files:
-            image_path = os.path.join(images_dir, image_name)
-            label_path = os.path.join(labels_dir, _label_path_for_image(image_name))
-            metrics = analyze_image(
-                model,
-                image_path,
-                label_path,
-                conf_threshold=conf_threshold,
-                iou_threshold=iou_threshold,
-            )
-            rows.append(
-                {
-                    "image": image_name,
-                    "split": split,
-                    **metrics,
-                }
-            )
-            print(
-                f"  {image_name}: error_score={metrics['error_score']:.2f}, "
-                f"FP={metrics['false_positives']}, FN={metrics['false_negatives']}, "
-                f"mean_iou={metrics['mean_iou']:.2f}"
-            )
-
-    rows.sort(key=lambda row: row["error_score"], reverse=True)
-    for rank, row in enumerate(rows, start=1):
-        row["impact_rank"] = rank
-
-    with open(output_csv_path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
-        writer.writeheader()
-        writer.writerows(rows)
-
-    print(f"\nSaved image analysis CSV: {output_csv_path}")
-    if rows:
-        worst = rows[0]
-        print(
-            f"Worst image: {worst['image']} ({worst['split']}) "
-            f"— error_score={worst['error_score']}, impact_rank=1"
-        )
-
-    return output_csv_path, rows
-
-
-def _default_model_path():
-    candidates = [
-        os.path.join(_project_root(), "output", "best.pt"),
-        os.path.join(_project_root(), "output", "training", "weights", "best.pt"),
-    ]
-    for candidate in candidates:
-        if os.path.exists(candidate):
-            return candidate
-    return None
-
-
-def main(model_path=None, splits=None, conf_threshold=DEFAULT_CONF_THRESHOLD, iou_threshold=DEFAULT_IOU_THRESHOLD):
-    if model_path is None:
-        model_path = _default_model_path()
-    if model_path is None:
-        raise FileNotFoundError(
-            "No model path provided and output/best.pt was not found. "
-            "Train a model or pass a .pt file path."
-        )
-
-    print(f"Using model: {model_path}")
+    print(f"Base model: {base_model}")
+    print(f"Folds (k): {k}")
+    print(f"Epochs per fold: {epochs}")
     print(f"Confidence threshold: {conf_threshold}")
     print(f"IoU match threshold: {iou_threshold}")
 
-    return analyze_dataset(
-        model_path=model_path,
-        splits=splits or ("val",),
+    return analyze_dataset_kfold(
+        base_model=base_model,
+        k=k,
+        epochs=epochs,
         conf_threshold=conf_threshold,
         iou_threshold=iou_threshold,
     )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Analyze per-image impact on YOLO model accuracy.")
-    parser.add_argument("--model", help="Path to trained .pt weights (default: output/best.pt)")
+    parser = argparse.ArgumentParser(
+        description="Find which training images hurt accuracy via K-Fold Cross-Validation."
+    )
     parser.add_argument(
-        "--split",
-        choices=("val", "train", "both"),
-        default="val",
-        help="Dataset split to analyze (default: val)",
+        "--base-model",
+        default=DEFAULT_BASE_MODEL,
+        help=f"Base YOLO model to train each fold from (default: {DEFAULT_BASE_MODEL})",
+    )
+    parser.add_argument("--k", type=int, default=DEFAULT_K, help=f"Number of folds (default: {DEFAULT_K})")
+    parser.add_argument(
+        "--epochs", type=int, default=DEFAULT_EPOCHS, help=f"Epochs per fold (default: {DEFAULT_EPOCHS})"
     )
     parser.add_argument("--conf", type=float, default=DEFAULT_CONF_THRESHOLD, help="Confidence threshold")
     parser.add_argument("--iou", type=float, default=DEFAULT_IOU_THRESHOLD, help="IoU match threshold")
     args = parser.parse_args()
 
-    split_arg = ("val", "train") if args.split == "both" else (args.split,)
     main(
-        model_path=args.model,
-        splits=split_arg,
+        base_model=args.base_model,
+        k=args.k,
+        epochs=args.epochs,
         conf_threshold=args.conf,
         iou_threshold=args.iou,
     )

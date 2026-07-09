@@ -1,5 +1,6 @@
 ultralytics
 opencv-python
 pandas
+openpyxl
 PyYAML
 matplotlib
