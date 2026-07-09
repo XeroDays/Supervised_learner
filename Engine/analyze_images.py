@@ -1,12 +1,14 @@
 import argparse
 import os
 import random
+import re
 import shutil
 import urllib.request
 
 import cv2
 import pandas as pd
 import torch
+import ultralytics
 import yaml
 from ultralytics import YOLO
 
@@ -34,6 +36,9 @@ BASE_MODEL_DOWNLOAD_URLS = {
     "yolo26n.pt": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt",
 }
 
+# YOLO26 architecture requires Ultralytics 8.4+ (older packages raise SPPF.__init__ errors).
+YOLO26_MIN_ULTRALYTICS = "8.4.0"
+
 OUTPUT_COLUMNS = [
     "image",
     "fold",
@@ -56,10 +61,6 @@ EXCEL_FILENAME = "image_analysis.xlsx"
 KFOLD_WORK_DIRNAME = "kfold_work"
 
 
-def _engine_dir():
-    return os.path.dirname(os.path.abspath(__file__))
-
-
 def _project_root():
     return os.getcwd()
 
@@ -69,7 +70,7 @@ def _dataset_path():
 
 
 def _kfold_work_path():
-    return os.path.join(_engine_dir(), KFOLD_WORK_DIRNAME)
+    return os.path.join(_project_root(), "output", KFOLD_WORK_DIRNAME)
 
 
 def _label_path_for_image(image_name):
@@ -334,14 +335,43 @@ def _download_base_model(filename, dest_path):
     return dest_path
 
 
+def _parse_version(version_text):
+    match = re.match(r"(\d+)\.(\d+)\.(\d+)", str(version_text).strip())
+    if not match:
+        return (0, 0, 0)
+    return tuple(int(part) for part in match.groups())
+
+
+def _ensure_ultralytics_supports_base_model(base_model):
+    """Fail early with a clear message when YOLO26 is used on Ultralytics < 8.4."""
+    filename = os.path.basename(base_model).lower()
+    if "yolo26" not in filename:
+        return
+
+    installed = getattr(ultralytics, "__version__", "0.0.0")
+    if _parse_version(installed) >= _parse_version(YOLO26_MIN_ULTRALYTICS):
+        return
+
+    raise RuntimeError(
+        f"YOLO26 requires Ultralytics {YOLO26_MIN_ULTRALYTICS}+, "
+        f"but this environment has {installed}.\n"
+        f"Upgrade with: pip install -U \"ultralytics>={YOLO26_MIN_ULTRALYTICS}\"\n"
+        f"Then re-run K-Fold analysis. YOLOv8 / YOLO11 still work on older packages."
+    )
+
+
 def _resolve_base_model(base_model):
     """Return a local path to base weights, downloading if needed."""
     if os.path.isabs(base_model) or os.path.dirname(base_model):
         if os.path.exists(base_model):
-            return os.path.abspath(base_model)
+            resolved = os.path.abspath(base_model)
+            _ensure_ultralytics_supports_base_model(resolved)
+            return resolved
         raise FileNotFoundError(f"Base model not found: {base_model}")
 
     filename = os.path.basename(base_model)
+    _ensure_ultralytics_supports_base_model(filename)
+
     local_path = os.path.join(_project_root(), filename)
     if os.path.exists(local_path):
         return local_path
@@ -474,9 +504,8 @@ def analyze_dataset_kfold(
         output_excel_path = os.path.join(output_dir, EXCEL_FILENAME)
 
     work_path = _kfold_work_path()
-    if os.path.isdir(work_path):
-        shutil.rmtree(work_path, ignore_errors=True)
     os.makedirs(work_path, exist_ok=True)
+    print(f"K-Fold work directory: {work_path}")
 
     device = _detect_device()
     print(
@@ -486,63 +515,60 @@ def analyze_dataset_kfold(
     print(f"PyTorch: {torch.__version__}")
 
     rows = []
-    try:
-        for fold_idx, val_index_list in enumerate(folds):
-            if not val_index_list:
-                continue
+    for fold_idx, val_index_list in enumerate(folds):
+        if not val_index_list:
+            continue
 
-            val_set = set(val_index_list)
+        val_set = set(val_index_list)
+        print(
+            f"\n===== Fold {fold_idx + 1}/{k} "
+            f"({len(pairs) - len(val_set)} train, {len(val_set)} val) ====="
+        )
+
+        data_yaml_path, val_pairs = _build_fold_dataset(pairs, val_set, classes, fold_idx)
+        best_weights_path = _train_fold(
+            resolved_base_model, data_yaml_path, epochs, imgsz, device, fold_idx
+        )
+
+        print(f"Scoring {len(val_pairs)} held-out images for fold {fold_idx + 1}...")
+        model = YOLO(best_weights_path)
+        for image_name, image_path, label_path in val_pairs:
+            metrics = analyze_image(
+                model,
+                image_path,
+                label_path,
+                conf_threshold=conf_threshold,
+                iou_threshold=iou_threshold,
+            )
+            rows.append(
+                {
+                    "image": image_name,
+                    "fold": fold_idx + 1,
+                    **metrics,
+                }
+            )
             print(
-                f"\n===== Fold {fold_idx + 1}/{k} "
-                f"({len(pairs) - len(val_set)} train, {len(val_set)} val) ====="
+                f"  {image_name}: error_score={metrics['error_score']:.2f}, "
+                f"FP={metrics['false_positives']}, FN={metrics['false_negatives']}, "
+                f"mean_iou={metrics['mean_iou']:.2f}"
             )
 
-            data_yaml_path, val_pairs = _build_fold_dataset(pairs, val_set, classes, fold_idx)
-            best_weights_path = _train_fold(
-                resolved_base_model, data_yaml_path, epochs, imgsz, device, fold_idx
-            )
+    rows.sort(key=lambda row: row["error_score"], reverse=True)
+    for rank, row in enumerate(rows, start=1):
+        row["impact_rank"] = rank
 
-            print(f"Scoring {len(val_pairs)} held-out images for fold {fold_idx + 1}...")
-            model = YOLO(best_weights_path)
-            for image_name, image_path, label_path in val_pairs:
-                metrics = analyze_image(
-                    model,
-                    image_path,
-                    label_path,
-                    conf_threshold=conf_threshold,
-                    iou_threshold=iou_threshold,
-                )
-                rows.append(
-                    {
-                        "image": image_name,
-                        "fold": fold_idx + 1,
-                        **metrics,
-                    }
-                )
-                print(
-                    f"  {image_name}: error_score={metrics['error_score']:.2f}, "
-                    f"FP={metrics['false_positives']}, FN={metrics['false_negatives']}, "
-                    f"mean_iou={metrics['mean_iou']:.2f}"
-                )
+    _save_excel(rows, output_excel_path)
 
-        rows.sort(key=lambda row: row["error_score"], reverse=True)
-        for rank, row in enumerate(rows, start=1):
-            row["impact_rank"] = rank
+    print(f"\nSaved image analysis Excel: {output_excel_path}")
+    print(f"Kept K-Fold work folder: {work_path}")
+    if rows:
+        worst = rows[0]
+        print(
+            f"Worst image: {worst['image']} (fold {worst['fold']}) "
+            f"— error_score={worst['error_score']}, impact_rank=1"
+        )
 
-        _save_excel(rows, output_excel_path)
-
-        print(f"\nSaved image analysis Excel: {output_excel_path}")
-        if rows:
-            worst = rows[0]
-            print(
-                f"Worst image: {worst['image']} (fold {worst['fold']}) "
-                f"— error_score={worst['error_score']}, impact_rank=1"
-            )
-
-        return output_excel_path, rows
-    finally:
-        shutil.rmtree(work_path, ignore_errors=True)
-        print("Removed temporary kfold_work folder")
+    return output_excel_path, rows
 
 
 def main(
