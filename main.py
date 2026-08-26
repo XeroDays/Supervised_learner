@@ -127,27 +127,30 @@ def select_feature():
     print("\nAvailable features:")
     print("-" * 20)
     print("0. Install PyTorch with CUDA 12.8")
-    print("1. Process Images (Detection)")
-    print("2. Compare Models")
-    print("3. Train Model")
-    print("4. Analyze Dataset Images")
+    print("1. Prepare Dataset (Extract Zip/7z)")
+    print("2. Process Images (Detection)")
+    print("3. Compare Models")
+    print("4. Train Model")
+    print("5. Analyze Dataset Images")
     
     while True:
         try:
-            choice = input("\nSelect a feature (0-4): ").strip()
+            choice = input("\nSelect a feature (0-5): ").strip()
             choice_num = int(choice)
             if choice_num == 0:
                 return "cuda"
             elif choice_num == 1:
-                return "detection"
+                return "prepare"
             elif choice_num == 2:
-                return "compare"
+                return "detection"
             elif choice_num == 3:
-                return "train"
+                return "compare"
             elif choice_num == 4:
+                return "train"
+            elif choice_num == 5:
                 return "analyze"
             else:
-                print("Please enter 0, 1, 2, 3, or 4")
+                print("Please enter 0, 1, 2, 3, 4, or 5")
         except ValueError:
             print("Please enter a valid number")
         except KeyboardInterrupt:
@@ -191,6 +194,18 @@ def main():
 
         if feature == "cuda":
             install_pytorch_cuda()
+            continue
+
+        if feature == "prepare":
+            print("\nPreparing dataset from archives...")
+            print("-" * 30)
+            try:
+                from Engine.prepare_dataset import DatasetPrepareError, prepare_dataset
+                prepare_dataset()
+            except DatasetPrepareError as e:
+                print(str(e))
+            except Exception as e:
+                print(f"Error preparing dataset: {e}")
             continue
 
         if feature == "train":
