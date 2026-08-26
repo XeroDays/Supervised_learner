@@ -131,6 +131,37 @@ def prepare_comparer_dataset(dataset_path):
     return comparer_path
 
 
+def _ensure_amp_check_image(dataset_path):
+    """Ultralytics AMP checks require assets/bus.jpg; restore it if the install omitted it."""
+    try:
+        from ultralytics.utils import ASSETS
+    except ImportError:
+        return
+
+    dest = os.path.join(str(ASSETS), "bus.jpg")
+    if os.path.isfile(dest):
+        return
+
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+
+    for name in os.listdir(dataset_path):
+        if name.lower().endswith(IMAGE_EXTENSIONS):
+            src = os.path.join(dataset_path, name)
+            if os.path.isfile(src):
+                shutil.copy2(src, dest)
+                print(f"Restored Ultralytics AMP check image from dataset: {dest}")
+                return
+
+    try:
+        import cv2
+        import numpy as np
+
+        cv2.imwrite(dest, np.zeros((64, 64, 3), dtype=np.uint8))
+        print(f"Created placeholder Ultralytics AMP check image: {dest}")
+    except Exception as e:
+        print(f"Warning: Could not restore AMP check image ({e})")
+
+
 def write_data_yaml(classes):
     data_yaml_content = {
         "train": "comparer/images/train",
@@ -162,6 +193,7 @@ def export_artifacts(best_weights_path, classes_file, output_dir):
     print(f"Exported: {best_pt_dest}")
 
     model = YOLO(best_weights_path)
+    tflite_dest = None
     try:
         export_path = model.export(format="tflite", imgsz=IMG_SIZE)
         tflite_dest = os.path.join(output_dir, os.path.basename(export_path))
@@ -219,8 +251,9 @@ def train_model(base_model=None):
         print("WARNING: Training on CPU — install PyTorch cu128 for RTX 5060 Ti")
 
     print(f"\nStarting training with {base_model} ({epochs} epochs, imgsz={IMG_SIZE})...")
+    _ensure_amp_check_image(dataset_path)
     model = YOLO(base_model)
-    model.train(
+    train_kwargs = dict(
         data=data_yaml_path,
         epochs=epochs,
         imgsz=IMG_SIZE,
@@ -230,6 +263,13 @@ def train_model(base_model=None):
         name="training",
         exist_ok=True,
     )
+    try:
+        model.train(**train_kwargs)
+    except FileNotFoundError as e:
+        if "bus.jpg" not in str(e):
+            raise
+        print("AMP check image still missing; retrying training with AMP disabled")
+        model.train(**train_kwargs, amp=False)
 
     best_weights_path = os.path.join(output_dir, "training", "weights", "best.pt")
     if not os.path.exists(best_weights_path):

@@ -30,6 +30,14 @@ apt install -y python3-venv python3-pip
 cd Supervised_learner
 ```
 
+
+## Delete Files from the Dataset
+
+```bash
+cd dataset
+rm -rf -- ./*
+```
+
 ## Create & Activate Python Env (manual)
 
 ```bash
@@ -46,6 +54,7 @@ To leave the env later:
 ```bash
 deactivate
 ```
+
 
 ## Test GPU (CUDA dry run)
 
