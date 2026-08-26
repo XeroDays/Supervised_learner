@@ -30,88 +30,10 @@ apt install -y python3-venv python3-pip
 cd Supervised_learner
 ```
 
-
-## Delete Files from the Dataset
-
-```bash
-cd dataset
-rm -rf -- ./*
-```
-
-## Create & Activate Python Env (manual)
-
-```bash
-cd /root/Supervised_learner
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-python main.py
-```
-
-To leave the env later:
-
-```bash
-deactivate
-```
-
-
 ## Test GPU (CUDA dry run)
 
 ```bash
 nvidia-smi
-```
-
-## Prepare Dataset
-
-Place labeled images in `dataset/` (each image needs a matching `.txt` label file and a `classes.txt`):
-
-```
-dataset/
-├── classes.txt
-├── image1.jpg
-├── image1.txt
-├── image2.jpg
-├── image2.txt
-└── ...
-```
-
-Upload from local machine (run on your laptop):
-
-```powershell
-scp -P PORT -r dataset root@IP:/root/Supervised_learner/dataset
-```
-
-### Upload & Extract Zip Dataset
-
-If your data is in a zip file named `Yolo_Vehicles_1280_clean.zip`, upload it into the `dataset/` folder and extract it on the server.
-
-  
-**2. Extract on the server:**
-
-```bash
-cd /root/Supervised_learner/dataset
-apt install -y unzip
-unzip Yolo_Vehicles_1280_clean.zip
-```
-
-**3. Move all images and labels into `dataset/` (if they are inside subfolders):**
-
-```bash
-cd /root/Supervised_learner/dataset
-find . -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.txt" \) ! -name "classes.txt" -exec mv -n {} . \;
-```
-
-Your `dataset/` folder should look like this before training:
-
-```
-dataset/
-├── classes.txt
-├── image1.jpg
-├── image1.txt
-├── image2.jpg
-├── image2.txt
-└── ...
 ```
 
 ## Run Application
@@ -123,21 +45,32 @@ chmod +x start-linux.sh
 ./start-linux.sh
 ```
 
-If you see `No module named 'Engine.compare'`, the server repo is out of date:
+## Prepare Dataset
+
+Put any `.zip` or `.7z` dataset archive into the `dataset/` folder. Do not extract it yourself.
+
+Then run the script:
 
 ```bash
-git pull origin main
-ls Engine/compare.py
+cd Supervised_learner
+chmod +x start-linux.sh
+./start-linux.sh
 ```
 
-If the file is missing, push your latest code from your laptop first, then pull again on the server.
+In the menu, select **1. Prepare Dataset (Extract Zip/7z)**. That extracts the archive, moves images and labels into `dataset/`, and deletes leftover empty folders. Zip/7z files are kept.
 
-The script will:
+After that, `dataset/` should look like this:
 
-- Create a virtual environment and install `requirements.txt`
-- Install PyTorch with CUDA 12.8 (`cu128`) for GPU training
-- Check GPU availability
-- Launch `main.py` (detection, model comparison, and training via the interactive menu)
+```
+dataset/
+├── classes.txt
+├── image1.jpg
+├── image1.txt
+├── image2.jpg
+├── image2.txt
+├── your-dataset.zip
+└── ...
+```
 
 ## GPU Troubleshooting (RTX 50-series / CUDA 12.8)
 
